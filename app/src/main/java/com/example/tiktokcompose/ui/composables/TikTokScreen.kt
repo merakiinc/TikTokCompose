@@ -1,14 +1,8 @@
 package com.example.tiktokcompose.ui.composables
 
 import android.view.ViewGroup
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.ExperimentalAnimationApi
-import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -43,7 +37,6 @@ import com.example.tiktokcompose.util.showToast
 import com.example.tiktokcompose.viewmodel.TikTokViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 
@@ -72,16 +65,9 @@ fun VideoPager(
     state: VideoUiState,
     viewModel: TikTokViewModel = hiltViewModel()
 ) {
-    val pagerState = rememberPagerState()
-
-    LaunchedEffect(key1 = pagerState) {
-        snapshotFlow { pagerState.currentPage }.distinctUntilChanged().collect { page ->
-            pagerState.animateScrollToPage(page)
-        }
-    }
+    val pagerState = rememberPagerState { state.videos.size }
 
     VerticalPager(
-        pageCount = state.videos.size,
         state = pagerState,
         horizontalAlignment = Alignment.CenterHorizontally,
         key = {
@@ -97,7 +83,7 @@ fun VideoPager(
             )
         }
         else {
-            Box {
+            Box(modifier = Modifier.fillMaxSize()) {
                 VideoThumbnail(video = state.videos[index])
             }
         }
@@ -230,6 +216,7 @@ fun Player(
                 }
                 is AnimationEffect -> {
                     animatedIconDrawable = effect.drawable
+                    animationJob?.cancel()
                     animationJob = launch {
                         iconVisibleState.targetState = true
                         delay(800)
