@@ -2,9 +2,11 @@ package com.virtualcouch.pucci.dev.ui.composables
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
@@ -17,7 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -227,8 +228,12 @@ fun LoginScreen(navController: NavController, viewModel: TikTokViewModel) {
 
 @Composable
 fun OtpScreen(phoneNumber: String, viewModel: TikTokViewModel) {
-    var otpCode by remember { mutableStateOf(List(6) { "" }) }
-    val focusRequesters = remember { List(6) { FocusRequester() } }
+    var otpValue by remember { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
 
     Column(
         modifier = Modifier
@@ -253,55 +258,55 @@ fun OtpScreen(phoneNumber: String, viewModel: TikTokViewModel) {
             modifier = Modifier.padding(bottom = 32.dp)
         )
 
+        // Single hidden BasicTextField to handle all input and backspace logic
+        BasicTextField(
+            value = otpValue,
+            onValueChange = {
+                if (it.length <= 6) {
+                    otpValue = it
+                    if (it.length == 6) {
+                        viewModel.verifyOtp(phoneNumber, it)
+                    }
+                }
+            },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier
+                .focusRequester(focusRequester)
+                .size(1.dp), // Hidden but functional
+            textStyle = TextStyle(color = Color.Transparent)
+        )
+
+        // Visual representation of the 6 boxes
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { focusRequester.requestFocus() },
             verticalAlignment = Alignment.CenterVertically
         ) {
             for (i in 0 until 6) {
-                OutlinedTextField(
-                    value = otpCode[i],
-                    onValueChange = { newValue ->
-                        if (newValue.length <= 1) {
-                            val newCode = otpCode.toMutableList()
-                            newCode[i] = newValue
-                            otpCode = newCode
-                            
-                            // Auto-focus forward logic
-                            if (newValue.isNotEmpty() && i < 5) {
-                                focusRequesters[i + 1].requestFocus()
-                            }
-                        }
-                    },
+                val char = if (i < otpValue.length) otpValue[i].toString() else ""
+                val isFocused = otpValue.length == i
+                
+                Box(
                     modifier = Modifier
                         .weight(1f)
-                        .focusRequester(focusRequesters[i])
-                        .onKeyEvent { keyEvent ->
-                            // Backspace logic: if empty and backspace pressed, move focus back
-                            if (keyEvent.type == KeyEventType.OnKeyDown && 
-                                keyEvent.key == Key.Backspace && 
-                                otpCode[i].isEmpty() && 
-                                i > 0) {
-                                focusRequesters[i - 1].requestFocus()
-                                true
-                            } else {
-                                false
-                            }
-                        },
-                    textStyle = TextStyle(
+                        .height(56.dp)
+                        .border(
+                            width = if (isFocused) 2.dp else 1.dp,
+                            color = if (isFocused) VirtualCouchBlue else Color.DarkGray,
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        .background(Color.Transparent),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = char,
                         color = Color.White,
-                        textAlign = TextAlign.Center,
-                        fontSize = 20.sp,
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.Bold
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                        focusedBorderColor = VirtualCouchBlue,
-                        unfocusedBorderColor = Color.DarkGray,
-                        textColor = Color.White
-                    ),
-                    singleLine = true
-                )
+                    )
+                }
             }
         }
 
@@ -309,12 +314,11 @@ fun OtpScreen(phoneNumber: String, viewModel: TikTokViewModel) {
 
         Button(
             onClick = {
-                val fullCode = otpCode.joinToString("")
-                if (fullCode.length == 6) {
-                    viewModel.verifyOtp(phoneNumber, fullCode)
+                if (otpValue.length == 6) {
+                    viewModel.verifyOtp(phoneNumber, otpValue)
                 }
             },
-            enabled = otpCode.all { it.isNotEmpty() },
+            enabled = otpValue.length == 6,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp),
