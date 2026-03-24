@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -266,7 +267,7 @@ fun OtpScreen(phoneNumber: String, viewModel: TikTokViewModel) {
                             newCode[i] = newValue
                             otpCode = newCode
                             
-                            // Auto-focus logic
+                            // Auto-focus forward logic
                             if (newValue.isNotEmpty() && i < 5) {
                                 focusRequesters[i + 1].requestFocus()
                             }
@@ -274,7 +275,19 @@ fun OtpScreen(phoneNumber: String, viewModel: TikTokViewModel) {
                     },
                     modifier = Modifier
                         .weight(1f)
-                        .focusRequester(focusRequesters[i]),
+                        .focusRequester(focusRequesters[i])
+                        .onKeyEvent { keyEvent ->
+                            // Backspace logic: if empty and backspace pressed, move focus back
+                            if (keyEvent.type == KeyEventType.OnKeyDown && 
+                                keyEvent.key == Key.Backspace && 
+                                otpCode[i].isEmpty() && 
+                                i > 0) {
+                                focusRequesters[i - 1].requestFocus()
+                                true
+                            } else {
+                                false
+                            }
+                        },
                     textStyle = TextStyle(
                         color = Color.White,
                         textAlign = TextAlign.Center,
