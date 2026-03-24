@@ -1,6 +1,8 @@
 package com.example.tiktokcompose.ui.composables
 
 import android.view.ViewGroup
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -11,8 +13,12 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material.Icon
-import androidx.compose.material.Text
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.rememberMultiplePermissionsState
+import android.Manifest
+import androidx.compose.material.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.media3.common.PlaybackException
@@ -32,29 +39,46 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.rememberAsyncImagePainter
 import com.example.tiktokcompose.domain.models.VideoData
-import com.example.tiktokcompose.ui.effect.AnimationEffect
-import com.example.tiktokcompose.ui.effect.PlayerErrorEffect
-import com.example.tiktokcompose.ui.effect.ResetAnimationEffect
+import com.example.tiktokcompose.ui.effect.*
 import com.example.tiktokcompose.ui.state.VideoUiState
 import com.example.tiktokcompose.util.findActivity
 import com.example.tiktokcompose.util.showToast
 import com.example.tiktokcompose.viewmodel.TikTokViewModel
+import java.io.File
+import android.net.Uri
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-
-import androidx.compose.material.*
-import com.example.tiktokcompose.ui.effect.*
-
+@OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun TikTokScreen(
     modifier: Modifier = Modifier,
-    viewModel: TikTokViewModel = hiltViewModel()
+    viewModel: TikTokViewModel = hiltViewModel(),
+    onLogout: () -> Unit = {}
 ) {
     var isLoading by remember { mutableStateOf(false) }
     var loadingMessage by remember { mutableStateOf("") }
     val context = LocalContext.current
+    
+    // Gerenciamento de Permissões
+    val permissionState = rememberMultiplePermissionsState(
+        permissions = listOf(
+            Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO
+        )
+    )
+    
+    // Preparação para captura de vídeo
+    var videoUri by remember { mutableStateOf<Uri?>(null) }
+    
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CaptureVideo()
+    ) { success ->
+        if (success) {
+            viewModel.uploadCapturedVideo(videoUri)
+        }
+    }
 
     Box(
         modifier = modifier
@@ -70,13 +94,31 @@ fun TikTokScreen(
         TikTokTopBar(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .statusBarsPadding()
+                .statusBarsPadding(),
+            onLogout = onLogout
         )
         
         TikTokBottomNavigation(
             modifier = Modifier.align(Alignment.BottomCenter),
             onAddClick = {
-                viewModel.recordAndUploadVideo()
+                if (permissionState.allPermissionsGranted) {
+                    try {
+                        val videoFile = File(context.cacheDir, "captured_video_${System.currentTimeMillis()}.mp4")
+                        if (!videoFile.parentFile.exists()) videoFile.parentFile.mkdirs()
+                        
+                        val uri = FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.fileprovider",
+                            videoFile
+                        )
+                        videoUri = uri
+                        cameraLauncher.launch(uri)
+                    } catch (e: Exception) {
+                        showToast(context, "Erro ao preparar câmera: ${e.message}")
+                    }
+                } else {
+                    permissionState.launchMultiplePermissionRequest()
+                }
             }
         )
 
@@ -115,34 +157,52 @@ fun TikTokScreen(
 }
 
 @Composable
-fun TikTokTopBar(modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(top = 16.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = "Seguindo",
-            color = Color.White.copy(alpha = 0.6f),
-            fontSize = 17.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.width(20.dp))
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+fun TikTokTopBar(
+    modifier: Modifier = Modifier,
+    onLogout: () -> Unit = {}
+) {
+    Box(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
-                text = "Para você",
-                color = Color.White,
+                text = "Seguindo",
+                color = Color.White.copy(alpha = 0.6f),
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Bold
             )
-            Spacer(modifier = Modifier.height(4.dp))
-            Box(
-                modifier = Modifier
-                    .width(30.dp)
-                    .height(2.dp)
-                    .background(Color.White)
+            Spacer(modifier = Modifier.width(20.dp))
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "Para você",
+                    color = Color.White,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Box(
+                    modifier = Modifier
+                        .width(30.dp)
+                        .height(2.dp)
+                        .background(Color.White)
+                )
+            }
+        }
+        
+        IconButton(
+            onClick = onLogout,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 8.dp, top = 8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.Logout,
+                contentDescription = "Logout",
+                tint = Color.White
             )
         }
     }

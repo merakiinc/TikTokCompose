@@ -40,7 +40,14 @@ fun AppNavigation(viewModel: TikTokViewModel) {
             ForgotPasswordScreen(navController)
         }
         composable("main") {
-            TikTokScreen(viewModel = viewModel)
+            TikTokScreen(
+                viewModel = viewModel,
+                onLogout = {
+                    navController.navigate("login") {
+                        popUpTo("main") { inclusive = true }
+                    }
+                }
+            )
         }
     }
 }

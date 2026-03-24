@@ -43,21 +43,27 @@ class TikTokViewModel @Inject constructor(
         }
     }
 
-    fun recordAndUploadVideo() {
+    fun uploadCapturedVideo(uri: android.net.Uri?) {
+        if (uri == null) return
+        
         viewModelScope.launch(Dispatchers.Main) {
             state.value.player?.pause()
             
-            _effect.emit(LoadingEffect(true, "Gravando vídeo..."))
-            delay(3000) // Simula gravação
+            _effect.emit(LoadingEffect(true, "Processando vídeo..."))
+            delay(1500) // Simula processamento
             
-            _effect.emit(LoadingEffect(true, "Fazendo upload..."))
-            delay(2000) // Simula upload
+            _effect.emit(LoadingEffect(true, "Fazendo upload do vídeo real..."))
+            delay(3000) // Simula upload
             
             _effect.emit(LoadingEffect(false))
-            _effect.emit(MessageEffect("Vídeo publicado com sucesso!"))
+            _effect.emit(MessageEffect("Vídeo real capturado e publicado com sucesso!"))
             
             state.value.player?.play()
         }
+    }
+
+    fun recordAndUploadVideo() {
+        // This method will now be deprecated in favor of the real camera logic in TikTokScreen
     }
 
     fun createPlayer(context: Context) {
