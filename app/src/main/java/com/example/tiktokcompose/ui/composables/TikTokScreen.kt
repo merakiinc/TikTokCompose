@@ -6,6 +6,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.VerticalPager
@@ -43,11 +44,18 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 
+import androidx.compose.material.*
+import com.example.tiktokcompose.ui.effect.*
+
 @Composable
 fun TikTokScreen(
     modifier: Modifier = Modifier,
     viewModel: TikTokViewModel = hiltViewModel()
 ) {
+    var isLoading by remember { mutableStateOf(false) }
+    var loadingMessage by remember { mutableStateOf("") }
+    val context = LocalContext.current
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -66,8 +74,43 @@ fun TikTokScreen(
         )
         
         TikTokBottomNavigation(
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier.align(Alignment.BottomCenter),
+            onAddClick = {
+                viewModel.recordAndUploadVideo()
+            }
         )
+
+        if (isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .clickable(enabled = false) {},
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Color.White)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(text = loadingMessage, color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(key1 = true) {
+        viewModel.effect.collect { effect ->
+            when (effect) {
+                is LoadingEffect -> {
+                    isLoading = effect.isLoading
+                    loadingMessage = effect.message
+                }
+                is MessageEffect -> {
+                    showToast(context, effect.message)
+                }
+                // ... (rest of effects handled below in Player)
+                else -> {}
+            }
+        }
     }
 }
 
@@ -273,6 +316,7 @@ fun Player(
                     iconVisibleState.targetState = false
                     animationJob?.cancel()
                 }
+                else -> {}
             }
         }
     }

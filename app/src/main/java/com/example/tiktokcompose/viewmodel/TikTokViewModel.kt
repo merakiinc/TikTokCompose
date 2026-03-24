@@ -19,6 +19,9 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Named
 
+import com.example.tiktokcompose.ui.effect.*
+import kotlinx.coroutines.delay
+
 @HiltViewModel
 class TikTokViewModel @Inject constructor(
     @Named("reddit_data") private val repository: VideoDataRepository
@@ -37,6 +40,23 @@ class TikTokViewModel @Inject constructor(
                     videos = it
                 ))
             }
+        }
+    }
+
+    fun recordAndUploadVideo() {
+        viewModelScope.launch(Dispatchers.Main) {
+            state.value.player?.pause()
+            
+            _effect.emit(LoadingEffect(true, "Gravando vídeo..."))
+            delay(3000) // Simula gravação
+            
+            _effect.emit(LoadingEffect(true, "Fazendo upload..."))
+            delay(2000) // Simula upload
+            
+            _effect.emit(LoadingEffect(false))
+            _effect.emit(MessageEffect("Vídeo publicado com sucesso!"))
+            
+            state.value.player?.play()
         }
     }
 

@@ -1,6 +1,7 @@
 package com.example.tiktokcompose.ui.composables
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Icon
@@ -8,17 +9,12 @@ import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.MailOutline
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.MailOutline
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -26,7 +22,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun TikTokBottomNavigation(modifier: Modifier = Modifier) {
+fun TikTokBottomNavigation(
+    modifier: Modifier = Modifier,
+    onAddClick: () -> Unit = {}
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -52,7 +51,7 @@ fun TikTokBottomNavigation(modifier: Modifier = Modifier) {
                 .fillMaxHeight(),
             contentAlignment = Alignment.Center
         ) {
-            TikTokAddButton()
+            TikTokAddButton(onClick = onAddClick)
         }
         NavigationItem(
             modifier = Modifier.weight(1f),
@@ -98,11 +97,12 @@ fun NavigationItem(
 }
 
 @Composable
-fun TikTokAddButton() {
+fun TikTokAddButton(onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .width(45.dp)
             .height(28.dp)
+            .clickable(onClick = onClick)
     ) {
         // Red layer (left)
         Box(
