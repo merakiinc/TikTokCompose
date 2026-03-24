@@ -4,6 +4,7 @@ import android.util.Log
 import com.example.tiktokcompose.data.api.RedditApi
 import com.example.tiktokcompose.domain.models.VideoData
 import com.example.tiktokcompose.domain.repository.VideoDataRepository
+import com.example.tiktokcompose.domain.repository.VideoListResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import java.util.concurrent.CancellationException
@@ -12,9 +13,9 @@ class RedditDataRepository(
     private val api: RedditApi
 ): VideoDataRepository {
     private val tag = "RedditDataRepository"
-    override fun fetchData(): Flow<List<VideoData>> = flow {
+    override fun fetchData(after: String?): Flow<VideoListResult> = flow {
         try {
-            val response = api.tikTokCringe()
+            val response = api.tikTokCringe(after = after)
             val videoData = response
                 .data
                 ?.posts
@@ -41,7 +42,7 @@ class RedditDataRepository(
                 }
                 .orEmpty()
 
-            emit(videoData)
+            emit(VideoListResult(videoData, response.data?.after))
         } catch (throwable: Throwable) {
             if (throwable is CancellationException) throw throwable
             Log.e(tag, "Error", throwable)

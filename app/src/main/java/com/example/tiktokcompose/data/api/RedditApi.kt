@@ -8,7 +8,8 @@ import retrofit2.http.Query
 interface RedditApi {
     @GET("/r/tiktokcringe/{sort}.json?raw_json=1")
     suspend fun tikTokCringe(
-        @Path("sort") sort: String? = "top",
-        @Query("t") top: String? = "today"
+        @Path("sort") sort: String? = "hot",
+        @Query("t") top: String? = null,
+        @Query("after") after: String? = null
     ): RedditResponse
 }

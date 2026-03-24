@@ -10,7 +10,8 @@ data class RedditResponse(
     @JsonClass(generateAdapter = true)
     data class Data1(
         @Json(name = "children")
-        val posts: List<Post>?
+        val posts: List<Post>?,
+        val after: String?
     ) {
         @JsonClass(generateAdapter = true)
         data class Post(

@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
@@ -40,6 +41,7 @@ import androidx.media3.ui.PlayerView
 import coil.compose.rememberAsyncImagePainter
 import com.example.tiktokcompose.domain.models.VideoData
 import com.example.tiktokcompose.ui.effect.*
+import com.example.tiktokcompose.ui.state.FeedType
 import com.example.tiktokcompose.ui.state.VideoUiState
 import com.example.tiktokcompose.util.findActivity
 import com.example.tiktokcompose.util.showToast
@@ -50,9 +52,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalPermissionsApi::class)
+@OptIn(ExperimentalPermissionsApi::class, ExperimentalFoundationApi::class)
 @Composable
-fun TikTokScreen(
+fun VirtualCouchScreen(
     modifier: Modifier = Modifier,
     viewModel: TikTokViewModel = hiltViewModel(),
     onLogout: () -> Unit = {}
@@ -60,6 +62,8 @@ fun TikTokScreen(
     var isLoading by remember { mutableStateOf(false) }
     var loadingMessage by remember { mutableStateOf("") }
     val context = LocalContext.current
+    val state by viewModel.state.collectAsState()
+    val scope = rememberCoroutineScope()
     
     // Gerenciamento de Permissões
     val permissionState = rememberMultiplePermissionsState(
@@ -80,25 +84,45 @@ fun TikTokScreen(
         }
     }
 
+    val mainPagerState = rememberPagerState(initialPage = 1) { 2 } // 0: Following, 1: For You
+
+    LaunchedEffect(mainPagerState.currentPage) {
+        val newFeed = if (mainPagerState.currentPage == 0) FeedType.FOLLOWING else FeedType.FOR_YOU
+        viewModel.switchFeed(newFeed)
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        val state by viewModel.state.collectAsState()
-        VideoPager(
-            state = state,
-            viewModel = viewModel
-        )
+        HorizontalPager(
+            state = mainPagerState,
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
+            val feedType = if (page == 0) FeedType.FOLLOWING else FeedType.FOR_YOU
+            VideoPager(
+                state = state,
+                feedType = feedType,
+                viewModel = viewModel
+            )
+        }
 
-        TikTokTopBar(
+        VirtualCouchTopBar(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .statusBarsPadding(),
-            onLogout = onLogout
+            activeFeed = state.activeFeed,
+            onLogout = onLogout,
+            onFeedClick = { feed ->
+                val page = if (feed == FeedType.FOLLOWING) 0 else 1
+                scope.launch {
+                    mainPagerState.animateScrollToPage(page)
+                }
+            }
         )
         
-        TikTokBottomNavigation(
+        VirtualCouchBottomNavigation(
             modifier = Modifier.align(Alignment.BottomCenter),
             onAddClick = {
                 if (permissionState.allPermissionsGranted) {
@@ -157,9 +181,11 @@ fun TikTokScreen(
 }
 
 @Composable
-fun TikTokTopBar(
+fun VirtualCouchTopBar(
     modifier: Modifier = Modifier,
-    onLogout: () -> Unit = {}
+    activeFeed: FeedType,
+    onLogout: () -> Unit = {},
+    onFeedClick: (FeedType) -> Unit = {}
 ) {
     Box(modifier = modifier.fillMaxWidth()) {
         Row(
@@ -169,28 +195,17 @@ fun TikTokTopBar(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
+            FeedTabText(
                 text = "Seguindo",
-                color = Color.White.copy(alpha = 0.6f),
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold
+                isActive = activeFeed == FeedType.FOLLOWING,
+                onClick = { onFeedClick(FeedType.FOLLOWING) }
             )
             Spacer(modifier = Modifier.width(20.dp))
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "Para você",
-                    color = Color.White,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Box(
-                    modifier = Modifier
-                        .width(30.dp)
-                        .height(2.dp)
-                        .background(Color.White)
-                )
-            }
+            FeedTabText(
+                text = "Virtual Couch",
+                isActive = activeFeed == FeedType.FOR_YOU,
+                onClick = { onFeedClick(FeedType.FOR_YOU) }
+            )
         }
         
         IconButton(
@@ -208,32 +223,75 @@ fun TikTokTopBar(
     }
 }
 
+@Composable
+fun FeedTabText(
+    text: String,
+    isActive: Boolean,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable(
+            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+            indication = null,
+            onClick = onClick
+        )
+    ) {
+        Text(
+            text = text,
+            color = if (isActive) Color.White else Color.White.copy(alpha = 0.6f),
+            fontSize = 17.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        if (isActive) {
+            Box(
+                modifier = Modifier
+                    .width(30.dp)
+                    .height(2.dp)
+                    .background(Color.White)
+            )
+        } else {
+            Spacer(modifier = Modifier.height(2.dp))
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun VideoPager(
     state: VideoUiState,
+    feedType: FeedType,
     viewModel: TikTokViewModel = hiltViewModel()
 ) {
-    val pagerState = rememberPagerState { state.videos.size }
+    val videos = if (feedType == FeedType.FOR_YOU) state.videos else state.followingVideos
+    val pagerState = rememberPagerState { videos.size }
+
+    // Logic to load more videos when reaching the end
+    LaunchedEffect(pagerState.currentPage) {
+        if (pagerState.currentPage >= videos.size - 5 && videos.isNotEmpty()) {
+            viewModel.loadMoreVideos(feedType)
+        }
+    }
 
     VerticalPager(
         state = pagerState,
         horizontalAlignment = Alignment.CenterHorizontally,
-        key = {
-            state.videos[it].id
+        key = { index ->
+            if (index < videos.size) videos[index].id else index
         }
     ) { index ->
-        if (index == pagerState.currentPage) {
+        if (index == pagerState.currentPage && state.activeFeed == feedType) {
             state.playMediaAt(index)
             VideoCard(
                 player = state.player,
-                video = state.videos[index],
+                video = videos[index],
                 viewModel = viewModel
             )
         }
         else {
             Box(modifier = Modifier.fillMaxSize()) {
-                VideoThumbnail(video = state.videos[index])
+                VideoThumbnail(video = videos[index])
             }
         }
     }

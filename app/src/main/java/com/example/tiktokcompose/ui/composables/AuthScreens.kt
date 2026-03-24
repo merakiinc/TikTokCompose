@@ -26,6 +26,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.tiktokcompose.viewmodel.TikTokViewModel
 
+private val VirtualCouchBlue = Color(0xFF1D4EEE)
+
 @Composable
 fun AppNavigation(viewModel: TikTokViewModel) {
     val navController = rememberNavController()
@@ -40,7 +42,7 @@ fun AppNavigation(viewModel: TikTokViewModel) {
             ForgotPasswordScreen(navController)
         }
         composable("main") {
-            TikTokScreen(
+            VirtualCouchScreen(
                 viewModel = viewModel,
                 onLogout = {
                     navController.navigate("login") {
@@ -67,7 +69,7 @@ fun LoginScreen(navController: NavController) {
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Entrar no TikTok",
+            text = "Entrar no Virtual Couch",
             color = Color.White,
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
@@ -80,10 +82,10 @@ fun LoginScreen(navController: NavController) {
             label = { Text("E-mail ou nome de usuário", color = Color.Gray) },
             modifier = Modifier.fillMaxWidth(),
             colors = TextFieldDefaults.outlinedTextFieldColors(
-                focusedBorderColor = Color(0xFFEE1D52),
+                focusedBorderColor = VirtualCouchBlue,
                 unfocusedBorderColor = Color.DarkGray,
                 textColor = Color.White,
-                cursorColor = Color(0xFFEE1D52)
+                cursorColor = VirtualCouchBlue
             ),
             singleLine = true
         )
@@ -104,10 +106,10 @@ fun LoginScreen(navController: NavController) {
                 }
             },
             colors = TextFieldDefaults.outlinedTextFieldColors(
-                focusedBorderColor = Color(0xFFEE1D52),
+                focusedBorderColor = VirtualCouchBlue,
                 unfocusedBorderColor = Color.DarkGray,
                 textColor = Color.White,
-                cursorColor = Color(0xFFEE1D52)
+                cursorColor = VirtualCouchBlue
             ),
             singleLine = true
         )
@@ -130,7 +132,7 @@ fun LoginScreen(navController: NavController) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp),
-            colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFFEE1D52)),
+            colors = ButtonDefaults.buttonColors(backgroundColor = VirtualCouchBlue),
             shape = RoundedCornerShape(4.dp)
         ) {
             Text(text = "Entrar", color = Color.White, fontWeight = FontWeight.Bold)
@@ -142,7 +144,7 @@ fun LoginScreen(navController: NavController) {
             Text(text = "Não tem uma conta? ", color = Color.Gray)
             Text(
                 text = "Criar conta",
-                color = Color(0xFFEE1D52),
+                color = VirtualCouchBlue,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.clickable { navController.navigate("register") }
             )
@@ -185,7 +187,7 @@ fun RegisterScreen(navController: NavController) {
             label = { Text("E-mail", color = Color.Gray) },
             modifier = Modifier.fillMaxWidth(),
             colors = TextFieldDefaults.outlinedTextFieldColors(
-                focusedBorderColor = Color(0xFF69C9D0),
+                focusedBorderColor = VirtualCouchBlue,
                 unfocusedBorderColor = Color.DarkGray,
                 textColor = Color.White
             )
@@ -200,7 +202,7 @@ fun RegisterScreen(navController: NavController) {
             modifier = Modifier.fillMaxWidth(),
             visualTransformation = PasswordVisualTransformation(),
             colors = TextFieldDefaults.outlinedTextFieldColors(
-                focusedBorderColor = Color(0xFF69C9D0),
+                focusedBorderColor = VirtualCouchBlue,
                 unfocusedBorderColor = Color.DarkGray,
                 textColor = Color.White
             )
@@ -215,7 +217,7 @@ fun RegisterScreen(navController: NavController) {
             modifier = Modifier.fillMaxWidth(),
             visualTransformation = PasswordVisualTransformation(),
             colors = TextFieldDefaults.outlinedTextFieldColors(
-                focusedBorderColor = Color(0xFF69C9D0),
+                focusedBorderColor = VirtualCouchBlue,
                 unfocusedBorderColor = Color.DarkGray,
                 textColor = Color.White
             )
@@ -228,7 +230,7 @@ fun RegisterScreen(navController: NavController) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp),
-            colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFFEE1D52)),
+            colors = ButtonDefaults.buttonColors(backgroundColor = VirtualCouchBlue),
             shape = RoundedCornerShape(4.dp)
         ) {
             Text(text = "Registrar", color = Color.White, fontWeight = FontWeight.Bold)
@@ -289,7 +291,7 @@ fun ForgotPasswordScreen(navController: NavController) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp),
-            colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFFEE1D52)),
+            colors = ButtonDefaults.buttonColors(backgroundColor = VirtualCouchBlue),
             shape = RoundedCornerShape(4.dp)
         ) {
             Text(text = "Enviar link", color = Color.White, fontWeight = FontWeight.Bold)

@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun TikTokBottomNavigation(
+fun VirtualCouchBottomNavigation(
     modifier: Modifier = Modifier,
     onAddClick: () -> Unit = {}
 ) {
@@ -36,13 +36,13 @@ fun TikTokBottomNavigation(
         NavigationItem(
             modifier = Modifier.weight(1f),
             icon = Icons.Default.Home,
-            label = "Início",
+            label = "Sessões",
             selected = true
         )
         NavigationItem(
             modifier = Modifier.weight(1f),
             icon = Icons.Outlined.People,
-            label = "Amigos",
+            label = "Comunidade",
             selected = false
         )
         Box(
@@ -51,18 +51,18 @@ fun TikTokBottomNavigation(
                 .fillMaxHeight(),
             contentAlignment = Alignment.Center
         ) {
-            TikTokAddButton(onClick = onAddClick)
+            VirtualCouchAddButton(onClick = onAddClick)
         }
         NavigationItem(
             modifier = Modifier.weight(1f),
             icon = Icons.Outlined.MailOutline,
-            label = "Inbox",
+            label = "Mensagens",
             selected = false
         )
         NavigationItem(
             modifier = Modifier.weight(1f),
             icon = Icons.Outlined.Person,
-            label = "Perfil",
+            label = "Meu Perfil",
             selected = false
         )
     }
@@ -97,25 +97,29 @@ fun NavigationItem(
 }
 
 @Composable
-fun TikTokAddButton(onClick: () -> Unit) {
+fun VirtualCouchAddButton(onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .width(45.dp)
             .height(28.dp)
             .clickable(onClick = onClick)
     ) {
-        // Red layer (left)
+        // Aesthetic layers maintained but with simplified therapist colors if needed
+        // For now keeping the TikTok-style layers as requested for aesthetic "richness" 
+        // but naming it correctly.
+        
+        // Dark Blue layer (left)
         Box(
             modifier = Modifier
                 .fillMaxHeight()
                 .width(37.dp)
                 .background(
-                    color = Color(0xFFEE1D52),
+                    color = Color(0xFF1D4EEE),
                     shape = RoundedCornerShape(8.dp)
                 )
                 .align(Alignment.CenterStart)
         )
-        // Cyan layer (right)
+        // Light Blue layer (right)
         Box(
             modifier = Modifier
                 .fillMaxHeight()
