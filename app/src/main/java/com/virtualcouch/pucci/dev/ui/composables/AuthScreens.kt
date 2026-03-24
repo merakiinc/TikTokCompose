@@ -14,18 +14,24 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.virtualcouch.pucci.dev.ui.effect.*
 import com.virtualcouch.pucci.dev.viewmodel.TikTokViewModel
 
@@ -50,6 +56,9 @@ fun AppNavigation(viewModel: TikTokViewModel) {
                         popUpTo("login") { inclusive = true }
                     }
                 }
+                is NeedOtpEffect -> {
+                    navController.navigate("otp/${effect.phoneNumber}")
+                }
                 is LoadingEffect -> {
                     isLoading = effect.isLoading
                     loadingMessage = effect.message
@@ -72,6 +81,13 @@ fun AppNavigation(viewModel: TikTokViewModel) {
             }
             composable("forgot_password") {
                 ForgotPasswordScreen(navController)
+            }
+            composable(
+                "otp/{phoneNumber}",
+                arguments = listOf(navArgument("phoneNumber") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val phoneNumber = backStackEntry.arguments?.getString("phoneNumber") ?: ""
+                OtpScreen(phoneNumber, viewModel)
             }
             composable("main") {
                 VirtualCouchScreen(
@@ -205,6 +221,105 @@ fun LoginScreen(navController: NavController, viewModel: TikTokViewModel) {
                 modifier = Modifier.clickable { navController.navigate("register") }
             )
         }
+    }
+}
+
+@Composable
+fun OtpScreen(phoneNumber: String, viewModel: TikTokViewModel) {
+    var otpCode by remember { mutableStateOf(List(6) { "" }) }
+    val focusRequesters = remember { List(6) { FocusRequester() } }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = "Verifique seu SMS",
+            color = Color.White,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        Text(
+            text = "Enviamos um código de 6 dígitos para o número $phoneNumber",
+            color = Color.Gray,
+            fontSize = 14.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 32.dp)
+        )
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            for (i in 0 until 6) {
+                OutlinedTextField(
+                    value = otpCode[i],
+                    onValueChange = { newValue ->
+                        if (newValue.length <= 1) {
+                            val newCode = otpCode.toMutableList()
+                            newCode[i] = newValue
+                            otpCode = newCode
+                            
+                            // Auto-focus logic
+                            if (newValue.isNotEmpty() && i < 5) {
+                                focusRequesters[i + 1].requestFocus()
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(focusRequesters[i]),
+                    textStyle = TextStyle(
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    colors = TextFieldDefaults.outlinedTextFieldColors(
+                        focusedBorderColor = VirtualCouchBlue,
+                        unfocusedBorderColor = Color.DarkGray,
+                        textColor = Color.White
+                    ),
+                    singleLine = true
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(48.dp))
+
+        Button(
+            onClick = {
+                val fullCode = otpCode.joinToString("")
+                if (fullCode.length == 6) {
+                    viewModel.verifyOtp(phoneNumber, fullCode)
+                }
+            },
+            enabled = otpCode.all { it.isNotEmpty() },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+            colors = ButtonDefaults.buttonColors(backgroundColor = VirtualCouchBlue),
+            shape = RoundedCornerShape(4.dp)
+        ) {
+            Text(text = "Verificar", color = Color.White, fontWeight = FontWeight.Bold)
+        }
+        
+        Text(
+            text = "Não recebeu o código? Reenviar",
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .padding(top = 24.dp)
+                .clickable { /* Opcional: Implementar reenvio */ }
+        )
     }
 }
 

@@ -15,3 +15,5 @@ data class LoadingEffect(val isLoading: Boolean, val message: String = ""): Vide
 data class MessageEffect(val message: String): VideoEffect()
 
 object LoginSuccessEffect: VideoEffect()
+
+data class NeedOtpEffect(val phoneNumber: String): VideoEffect()

@@ -5,17 +5,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
-import com.virtualcouch.pucci.dev.data.api.AuthApi
-import com.virtualcouch.pucci.dev.data.api.LoginRequest
+import com.virtualcouch.pucci.dev.data.api.*
 import com.virtualcouch.pucci.dev.domain.repository.VideoDataRepository
-import com.virtualcouch.pucci.dev.ui.effect.AnimationEffect
-import com.virtualcouch.pucci.dev.ui.effect.PlayerErrorEffect
-import com.virtualcouch.pucci.dev.ui.effect.ResetAnimationEffect
-import com.virtualcouch.pucci.dev.ui.effect.VideoEffect
+import com.virtualcouch.pucci.dev.ui.effect.*
 import com.virtualcouch.pucci.dev.ui.state.FeedType
 import com.virtualcouch.pucci.dev.ui.state.VideoUiState
 import com.virtualcouch.pucci.dev.util.TokenManager
 import com.virtualcouch.pucci.dev.util.toMediaItems
+import com.squareup.moshi.Moshi
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -23,8 +20,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Named
-
-import com.virtualcouch.pucci.dev.ui.effect.*
 import kotlinx.coroutines.delay
 
 @HiltViewModel
@@ -57,20 +52,80 @@ class TikTokViewModel @Inject constructor(
                 val response = authApi.login(LoginRequest(email, password))
                 if (response.isSuccessful && response.body() != null) {
                     val loginResponse = response.body()!!
-                    tokenManager.saveTokens(
-                        accessToken = loginResponse.tokens.access.token,
-                        refreshToken = loginResponse.tokens.refresh.token
-                    )
-                    _effect.emit(LoadingEffect(false))
-                    _effect.emit(LoginSuccessEffect)
+                    
+                    // Busca o phoneNumber na raiz ou dentro do objeto user
+                    val phone = loginResponse.phoneNumber ?: loginResponse.user?.phoneNumber
+                    val method = loginResponse.method ?: "sms"
+
+                    if (phone != null) {
+                        // Enviar OTP usando o número e o método retornados
+                        sendOtp(phone, method)
+                    } else if (loginResponse.tokens != null) {
+                        // Fluxo antigo/direto (caso ocorra)
+                        tokenManager.saveTokens(
+                            accessToken = loginResponse.tokens.access.token,
+                            refreshToken = loginResponse.tokens.refresh.token
+                        )
+                        _effect.emit(LoadingEffect(false))
+                        _effect.emit(LoginSuccessEffect)
+                    } else {
+                        _effect.emit(LoadingEffect(false))
+                        _effect.emit(MessageEffect("Dados de login incompletos"))
+                    }
                 } else {
-                    val errorBody = response.errorBody()?.string() ?: ""
+                    val errorBody = response.errorBody()?.string()
+                    val errorMessage = try {
+                        val moshi = Moshi.Builder().build()
+                        val adapter = moshi.adapter(BaseErrorResponse::class.java)
+                        adapter.fromJson(errorBody ?: "")?.message ?: "Erro desconhecido"
+                    } catch (e: Exception) {
+                        "Erro no login (${response.code()})"
+                    }
                     _effect.emit(LoadingEffect(false))
-                    _effect.emit(MessageEffect("Erro no login (${response.code()}): ${response.message()} $errorBody"))
+                    _effect.emit(MessageEffect(errorMessage))
                 }
             } catch (e: Exception) {
                 _effect.emit(LoadingEffect(false))
                 _effect.emit(MessageEffect("Erro de conexão: ${e.message}"))
+            }
+        }
+    }
+
+    private suspend fun sendOtp(phoneNumber: String, method: String) {
+        try {
+            val response = authApi.sendOtp(SendOtpRequest(phoneNumber = phoneNumber, method = method))
+            _effect.emit(LoadingEffect(false))
+            if (response.isSuccessful) {
+                _effect.emit(NeedOtpEffect(phoneNumber))
+            } else {
+                _effect.emit(MessageEffect("Erro ao enviar SMS de verificação"))
+            }
+        } catch (e: Exception) {
+            _effect.emit(LoadingEffect(false))
+            _effect.emit(MessageEffect("Falha ao solicitar código: ${e.message}"))
+        }
+    }
+
+    fun verifyOtp(phoneNumber: String, token: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _effect.emit(LoadingEffect(true, "Verificando código..."))
+            try {
+                val response = authApi.verifyOtp(phoneNumber, token)
+                if (response.isSuccessful && response.body()?.tokens != null) {
+                    val loginResponse = response.body()!!
+                    tokenManager.saveTokens(
+                        accessToken = loginResponse.tokens!!.access.token,
+                        refreshToken = loginResponse.tokens!!.refresh.token
+                    )
+                    _effect.emit(LoadingEffect(false))
+                    _effect.emit(LoginSuccessEffect)
+                } else {
+                    _effect.emit(LoadingEffect(false))
+                    _effect.emit(MessageEffect("Código de verificação inválido"))
+                }
+            } catch (e: Exception) {
+                _effect.emit(LoadingEffect(false))
+                _effect.emit(MessageEffect("Erro na verificação: ${e.message}"))
             }
         }
     }
