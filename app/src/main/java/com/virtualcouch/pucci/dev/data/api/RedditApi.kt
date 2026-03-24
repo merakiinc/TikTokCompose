@@ -1,0 +1,15 @@
+package com.virtualcouch.pucci.dev.data.api
+
+import com.virtualcouch.pucci.dev.data.models.RedditResponse
+import retrofit2.http.GET
+import retrofit2.http.Path
+import retrofit2.http.Query
+
+interface RedditApi {
+    @GET("/r/tiktokcringe/{sort}.json?raw_json=1")
+    suspend fun tikTokCringe(
+        @Path("sort") sort: String? = "hot",
+        @Query("t") top: String? = null,
+        @Query("after") after: String? = null
+    ): RedditResponse
+}

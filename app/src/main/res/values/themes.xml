@@ -1,7 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.TikTokCompose" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:statusBarColor">@color/purple_700</item>
+    <style name="Theme.VirtualCouch" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/virtual_couch_blue</item>
+        <item name="android:windowBackground">@color/black</item>
+    </style>
+
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <!-- Background of the splash screen -->
+        <item name="windowSplashScreenBackground">@color/virtual_couch_blue</item>
+        
+        <!-- Icon of the splash screen -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_icon</item>
+        
+        <!-- Post splash screen theme -->
+        <item name="postSplashScreenTheme">@style/Theme.VirtualCouch</item>
     </style>
 </resources>

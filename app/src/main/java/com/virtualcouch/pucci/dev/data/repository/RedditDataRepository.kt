@@ -1,0 +1,51 @@
+package com.virtualcouch.pucci.dev.data.repository
+
+import android.util.Log
+import com.virtualcouch.pucci.dev.data.api.RedditApi
+import com.virtualcouch.pucci.dev.domain.models.VideoData
+import com.virtualcouch.pucci.dev.domain.repository.VideoDataRepository
+import com.virtualcouch.pucci.dev.domain.repository.VideoListResult
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import java.util.concurrent.CancellationException
+
+class RedditDataRepository(
+    private val api: RedditApi
+): VideoDataRepository {
+    private val tag = "RedditDataRepository"
+    override fun fetchData(after: String?): Flow<VideoListResult> = flow {
+        try {
+            val response = api.tikTokCringe(after = after)
+            val videoData = response
+                .data
+                ?.posts
+                ?.map { post ->
+                    val video = post.data?.secureMedia?.video
+                    val width = video?.width
+                    val height = video?.height
+                    val aspectRatio = if (width != null && height != null) {
+                        width.toFloat() / height.toFloat()
+                    } else {
+                        null
+                    }
+                    VideoData(
+                        id = post.data?.id.orEmpty(),
+                        mediaUri = video?.hlsUrl.orEmpty(),
+                        previewImageUri = post.data?.preview?.images?.firstOrNull()?.source?.url.orEmpty(),
+                        aspectRatio = aspectRatio
+                    )
+                }
+                ?.filter { videoData ->
+                    videoData.id.isNotBlank()
+                            && videoData.mediaUri.isNotBlank()
+                            && videoData.previewImageUri.isNotBlank()
+                }
+                .orEmpty()
+
+            emit(VideoListResult(videoData, response.data?.after))
+        } catch (throwable: Throwable) {
+            if (throwable is CancellationException) throw throwable
+            Log.e(tag, "Error", throwable)
+        }
+    }
+}

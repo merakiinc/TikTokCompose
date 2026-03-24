@@ -7,11 +7,11 @@ plugins {
 }
 
 android {
-    namespace "com.example.tiktokcompose"
+    namespace "com.virtualcouch.pucci.dev"
     compileSdk 35
 
     defaultConfig {
-        applicationId "com.example.tiktokcompose"
+        applicationId "com.virtualcouch.pucci.dev"
         minSdk 23
         targetSdk 35
         versionCode 1
@@ -63,6 +63,7 @@ dependencies {
     implementation 'androidx.compose.material:material-icons-extended'
     implementation "androidx.navigation:navigation-compose:2.8.8"
     implementation "com.google.accompanist:accompanist-permissions:0.34.0"
+    implementation "androidx.core:core-splashscreen:1.1.0-rc01"
 
     // Coroutines
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1"
