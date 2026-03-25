@@ -274,6 +274,18 @@ fun VideoPager(
         }
     }
 
+    // Sync ViewModel with current pager index
+    LaunchedEffect(pagerState.currentPage) {
+        viewModel.updateIndex(pagerState.currentPage)
+    }
+
+    // Force play when state.player is available or app resumes
+    LaunchedEffect(state.player, pagerState.currentPage, state.activeFeed) {
+        if (state.activeFeed == feedType) {
+            state.playMediaAt(pagerState.currentPage)
+        }
+    }
+
     VerticalPager(
         state = pagerState,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -282,7 +294,6 @@ fun VideoPager(
         }
     ) { index ->
         if (index == pagerState.currentPage && state.activeFeed == feedType) {
-            state.playMediaAt(index)
             VideoCard(
                 player = state.player,
                 video = videos[index],
@@ -304,19 +315,35 @@ fun VideoCard(
     viewModel: TikTokViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    var showPlayer by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    
+    // Create player view linked to the player instance
+    val playerView = player?.let { rememberPlayerView(it) }
+
     ComposableLifecycle { _, event ->
         when (event) {
             Lifecycle.Event.ON_START -> viewModel.createPlayer(context)
-            Lifecycle.Event.ON_STOP -> viewModel.releasePlayer(context.findActivity()?.isChangingConfigurations == true)
+            Lifecycle.Event.ON_STOP -> {
+                showPlayer = false // IMPORTANTE: Reseta para thumbnail ao sair
+                viewModel.releasePlayer(context.findActivity()?.isChangingConfigurations == true)
+            }
+            Lifecycle.Event.ON_RESUME -> {
+                scope.launch {
+                    delay(200) // Pequeno fôlego para o sistema renderizar a view
+                    viewModel.play()
+                }
+            }
+            Lifecycle.Event.ON_PAUSE -> viewModel.pause()
             else -> {}
         }
     }
+
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        var showPlayer by remember { mutableStateOf(false) }
-        if (player != null) {
+        if (player != null && playerView != null) {
             PlayerListener(
                 player = player
             ) { event->
@@ -329,13 +356,14 @@ fun VideoCard(
                     }
                 }
             }
-            val playerView = rememberPlayerView(player)
             Player(
                 playerView = playerView,
                 viewModel = viewModel,
                 aspectRatio = video.aspectRatio ?: 1f
             )
         }
+        
+        // Exibe thumbnail enquanto o player não renderizou o frame
         if (!showPlayer) {
             VideoThumbnail(video = video)
         }
@@ -392,7 +420,11 @@ fun Player(
             factory = { playerView },
             modifier = Modifier
                 .aspectRatio(aspectRatio)
-                .align(Alignment.Center)
+                .align(Alignment.Center),
+            update = { view ->
+                // Nudge para forçar o redesenho se necessário
+                view.invalidate()
+            }
         )
         AnimatedVisibility(
             visibleState = iconVisibleState,
@@ -444,7 +476,7 @@ fun Player(
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 fun rememberPlayerView(player: Player): PlayerView {
     val context = LocalContext.current
-    val playerView = remember {
+    val playerView = remember(player) {
         PlayerView(context).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -455,8 +487,8 @@ fun rememberPlayerView(player: Player): PlayerView {
             this.player = player
         }
     }
+    
     DisposableEffect(key1 = player) {
-        playerView.player = player
         onDispose {
             playerView.player = null
         }

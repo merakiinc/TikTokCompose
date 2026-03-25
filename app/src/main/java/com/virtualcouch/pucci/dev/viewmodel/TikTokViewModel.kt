@@ -39,6 +39,7 @@ class TikTokViewModel @Inject constructor(
     private var nextTokenFollowing: String? = null
     private var isLoadingForYou = false
     private var isLoadingFollowing = false
+    private var currentIndex = 0
 
     init {
         loadMoreVideos(FeedType.FOR_YOU)
@@ -208,12 +209,17 @@ class TikTokViewModel @Inject constructor(
                 state.copy(player = ExoPlayer.Builder(context).build().apply {
                     repeatMode = Player.REPEAT_MODE_ONE
                     setMediaItems(state.currentVideosList.toMediaItems())
+                    seekToDefaultPosition(currentIndex)
                     prepare()
                 })
             }
             else
                 state
         }
+    }
+
+    fun updateIndex(index: Int) {
+        currentIndex = index
     }
 
     fun releasePlayer(isChangingConfigurations: Boolean) {
@@ -234,6 +240,14 @@ class TikTokViewModel @Inject constructor(
                 )
             }
         }
+    }
+
+    fun play() {
+        state.value.player?.play()
+    }
+
+    fun pause() {
+        state.value.player?.pause()
     }
 
     fun onTappedScreen() {
