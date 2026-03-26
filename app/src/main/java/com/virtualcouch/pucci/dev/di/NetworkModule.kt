@@ -2,6 +2,8 @@ package com.virtualcouch.pucci.dev.di
 
 import com.virtualcouch.pucci.dev.data.api.AuthApi
 import com.virtualcouch.pucci.dev.data.api.RedditApi
+import com.virtualcouch.pucci.dev.data.api.SocialApi
+import com.virtualcouch.pucci.dev.util.AuthInterceptor
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -27,7 +29,8 @@ class NetworkModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(loggingInterceptor: HttpLoggingInterceptor): OkHttpClient {
+    @Named("auth_oklight")
+    fun provideAuthOkHttpClient(loggingInterceptor: HttpLoggingInterceptor): OkHttpClient {
         return OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
             .addInterceptor { chain ->
@@ -42,8 +45,21 @@ class NetworkModule {
 
     @Provides
     @Singleton
+    @Named("authenticated_okhttp")
+    fun provideAuthenticatedOkHttpClient(
+        loggingInterceptor: HttpLoggingInterceptor,
+        authInterceptor: AuthInterceptor
+    ): OkHttpClient {
+        return OkHttpClient.Builder()
+            .addInterceptor(loggingInterceptor)
+            .addInterceptor(authInterceptor)
+            .build()
+    }
+
+    @Provides
+    @Singleton
     @Named("reddit_retrofit")
-    fun provideRedditRetrofit(okHttpClient: OkHttpClient): Retrofit {
+    fun provideRedditRetrofit(@Named("authenticated_okhttp") okHttpClient: OkHttpClient): Retrofit {
         return Retrofit.Builder()
             .client(okHttpClient)
             .addConverterFactory(MoshiConverterFactory.create())
@@ -54,7 +70,18 @@ class NetworkModule {
     @Provides
     @Singleton
     @Named("virtual_couch_retrofit")
-    fun provideVirtualCouchRetrofit(okHttpClient: OkHttpClient): Retrofit {
+    fun provideVirtualCouchRetrofit(@Named("authenticated_okhttp") okHttpClient: OkHttpClient): Retrofit {
+        return Retrofit.Builder()
+            .client(okHttpClient)
+            .addConverterFactory(MoshiConverterFactory.create())
+            .baseUrl("https://api2.pucci.dev/")
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    @Named("auth_retrofit")
+    fun provideAuthRetrofit(@Named("auth_oklight") okHttpClient: OkHttpClient): Retrofit {
         return Retrofit.Builder()
             .client(okHttpClient)
             .addConverterFactory(MoshiConverterFactory.create())
@@ -70,7 +97,13 @@ class NetworkModule {
 
     @Provides
     @Singleton
-    fun provideAuthApi(@Named("virtual_couch_retrofit") retrofit: Retrofit): AuthApi {
+    fun provideAuthApi(@Named("auth_retrofit") retrofit: Retrofit): AuthApi {
         return retrofit.create(AuthApi::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideSocialApi(@Named("virtual_couch_retrofit") retrofit: Retrofit): SocialApi {
+        return retrofit.create(SocialApi::class.java)
     }
 }

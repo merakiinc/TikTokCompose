@@ -14,6 +14,7 @@ import com.virtualcouch.pucci.dev.util.TokenManager
 import com.virtualcouch.pucci.dev.util.toMediaItems
 import com.squareup.moshi.Moshi
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -21,12 +22,17 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Named
 import kotlinx.coroutines.delay
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 
 @HiltViewModel
 class TikTokViewModel @Inject constructor(
     @Named("reddit_data") private val repository: VideoDataRepository,
     private val authApi: AuthApi,
-    private val tokenManager: TokenManager
+    private val socialApi: SocialApi,
+    private val tokenManager: TokenManager,
+    @ApplicationContext private val context: Context
 ): ViewModel() {
 
     private val _state = MutableStateFlow(VideoUiState())
@@ -187,19 +193,41 @@ class TikTokViewModel @Inject constructor(
     fun uploadCapturedVideo(uri: android.net.Uri?) {
         if (uri == null) return
         
-        viewModelScope.launch(Dispatchers.Main) {
-            state.value.player?.pause()
-            
-            _effect.emit(LoadingEffect(true, "Processando vídeo..."))
-            delay(1500) // Simula processamento
-            
-            _effect.emit(LoadingEffect(true, "Fazendo upload do vídeo real..."))
-            delay(3000) // Simula upload
-            
-            _effect.emit(LoadingEffect(false))
-            _effect.emit(MessageEffect("Vídeo real capturado e publicado com sucesso!"))
-            
-            state.value.player?.play()
+        viewModelScope.launch(Dispatchers.IO) {
+            withContext(Dispatchers.Main) {
+                state.value.player?.pause()
+                _effect.emit(LoadingEffect(true, "Iniciando upload do vídeo..."))
+            }
+
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val fileBytes = inputStream?.readBytes() ?: throw Exception("Falha ao ler o arquivo de vídeo")
+                inputStream.close()
+
+                val requestFile = fileBytes.toRequestBody("video/mp4".toMediaTypeOrNull())
+                val body = MultipartBody.Part.createFormData("video", "video_captured.mp4", requestFile)
+                
+                val locale = context.resources.configuration.locales.get(0).toString()
+                val localeBody = locale.toRequestBody("text/plain".toMediaTypeOrNull())
+
+                val response = socialApi.uploadVideo(body, localeBody)
+
+                withContext(Dispatchers.Main) {
+                    _effect.emit(LoadingEffect(false))
+                    if (response.isSuccessful) {
+                        _effect.emit(MessageEffect("Vídeo publicado com sucesso!"))
+                    } else {
+                        _effect.emit(MessageEffect("Erro no upload (${response.code()}): ${response.message()}"))
+                    }
+                    state.value.player?.play()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    _effect.emit(LoadingEffect(false))
+                    _effect.emit(MessageEffect("Erro de conexão no upload: ${e.message}"))
+                    state.value.player?.play()
+                }
+            }
         }
     }
 

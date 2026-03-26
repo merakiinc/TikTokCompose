@@ -61,6 +61,11 @@ data class BaseErrorResponse(
     val message: String?
 )
 
+@JsonClass(generateAdapter = true)
+data class RefreshTokenRequest(
+    val refreshToken: String
+)
+
 interface AuthApi {
     @POST("v1/auth/login-mobile")
     suspend fun login(@Body request: LoginRequest): Response<LoginResponse>
@@ -73,4 +78,7 @@ interface AuthApi {
         @Query("phoneNumber") phoneNumber: String,
         @Query("token") token: String
     ): Response<LoginResponse>
+
+    @POST("v1/auth/refresh-tokens")
+    suspend fun refreshTokens(@Body request: RefreshTokenRequest): Response<LoginResponse.TokenData>
 }
