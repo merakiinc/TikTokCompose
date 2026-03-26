@@ -17,6 +17,13 @@ class AuthInterceptor @Inject constructor(
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val originalRequest = chain.request()
+        
+        // REGRA CRÍTICA: Só adiciona headers se for para a nossa API
+        // URLs do Cloudflare R2 ou S3 NÃO podem receber estes headers extras
+        if (!originalRequest.url.host.contains("pucci.dev")) {
+            return chain.proceed(originalRequest)
+        }
+
         val requestBuilder = originalRequest.newBuilder()
             .header("User-Agent", "VirtualCouchMobile/1.0")
             .header("Accept", "application/json")
@@ -33,9 +40,8 @@ class AuthInterceptor @Inject constructor(
         if (response.code == 401) {
             val refreshToken = tokenManager.getRefreshToken()
             if (refreshToken != null) {
-                response.close() // Close the current 401 response
+                response.close() 
 
-                // Synchronously try to refresh tokens
                 val refreshResponse = runBlocking {
                     try {
                         authApiProvider.get().refreshTokens(RefreshTokenRequest(refreshToken))
@@ -48,13 +54,11 @@ class AuthInterceptor @Inject constructor(
                     val newTokens = refreshResponse.body()!!
                     tokenManager.saveTokens(newTokens.access.token, newTokens.refresh.token)
 
-                    // Retry the original request with the new token
                     val newRequest = originalRequest.newBuilder()
                         .header("Authorization", "Bearer ${newTokens.access.token}")
                         .build()
                     return chain.proceed(newRequest)
                 } else {
-                    // Refresh failed, clear tokens so user logs in again
                     tokenManager.clearTokens()
                 }
             }

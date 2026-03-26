@@ -58,6 +58,15 @@ class NetworkModule {
 
     @Provides
     @Singleton
+    @Named("cloud_okhttp")
+    fun provideCloudOkHttpClient(loggingInterceptor: HttpLoggingInterceptor): OkHttpClient {
+        return OkHttpClient.Builder()
+            .addInterceptor(loggingInterceptor)
+            .build() // TOTALMENTE LIMPO, sem AuthInterceptor
+    }
+
+    @Provides
+    @Singleton
     @Named("reddit_retrofit")
     fun provideRedditRetrofit(@Named("authenticated_okhttp") okHttpClient: OkHttpClient): Retrofit {
         return Retrofit.Builder()
@@ -91,6 +100,16 @@ class NetworkModule {
 
     @Provides
     @Singleton
+    @Named("cloud_retrofit")
+    fun provideCloudRetrofit(@Named("cloud_okhttp") okHttpClient: OkHttpClient): Retrofit {
+        return Retrofit.Builder()
+            .client(okHttpClient)
+            .baseUrl("https://api2.pucci.dev/") // Base URL fake para o @Url funcionar
+            .build()
+    }
+
+    @Provides
+    @Singleton
     fun provideRedditApi(@Named("reddit_retrofit") retrofit: Retrofit): RedditApi {
         return retrofit.create(RedditApi::class.java)
     }
@@ -104,6 +123,13 @@ class NetworkModule {
     @Provides
     @Singleton
     fun provideSocialApi(@Named("virtual_couch_retrofit") retrofit: Retrofit): SocialApi {
+        return retrofit.create(SocialApi::class.java)
+    }
+
+    @Provides
+    @Singleton
+    @Named("cloud_social_api")
+    fun provideCloudSocialApi(@Named("cloud_retrofit") retrofit: Retrofit): SocialApi {
         return retrofit.create(SocialApi::class.java)
     }
 }

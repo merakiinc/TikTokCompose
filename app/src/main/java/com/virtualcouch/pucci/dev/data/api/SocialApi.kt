@@ -1,17 +1,41 @@
 package com.virtualcouch.pucci.dev.data.api
 
-import okhttp3.MultipartBody
+import com.squareup.moshi.JsonClass
+import okhttp3.RequestBody
 import retrofit2.Response
-import retrofit2.http.Header
-import retrofit2.http.Multipart
-import retrofit2.http.POST
-import retrofit2.http.Part
+import retrofit2.http.*
+
+@JsonClass(generateAdapter = true)
+data class PresignedUrlResponse(
+    val uploadUrl: String,
+    val fileKey: String,
+    val postId: String,
+    val publicUrl: String
+)
+
+@JsonClass(generateAdapter = true)
+data class PostVideoRequest(
+    val postId: String,
+    val videoUrl: String,
+    val content: String,
+    val locale: String
+)
 
 interface SocialApi {
-    @Multipart
+    @GET("v1/social/presigned-url")
+    suspend fun getPresignedUrl(
+        @Query("fileName") fileName: String = "video.mp4",
+        @Query("contentType") contentType: String = "video/mp4"
+    ): Response<PresignedUrlResponse>
+
+    @PUT
+    suspend fun uploadToCloud(
+        @Url url: String,
+        @Body video: RequestBody
+    ): Response<Unit>
+
     @POST("v1/social/post-video")
-    suspend fun uploadVideo(
-        @Part video: MultipartBody.Part,
-        @Part("locale") locale: okhttp3.RequestBody
+    suspend fun postVideoConfirm(
+        @Body request: PostVideoRequest
     ): Response<Unit>
 }

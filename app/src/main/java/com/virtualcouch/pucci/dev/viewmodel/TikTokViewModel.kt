@@ -31,6 +31,7 @@ class TikTokViewModel @Inject constructor(
     @Named("reddit_data") private val repository: VideoDataRepository,
     private val authApi: AuthApi,
     private val socialApi: SocialApi,
+    @Named("cloud_social_api") private val cloudSocialApi: SocialApi,
     private val tokenManager: TokenManager,
     @ApplicationContext private val context: Context
 ): ViewModel() {
@@ -70,8 +71,8 @@ class TikTokViewModel @Inject constructor(
                     } else if (loginResponse.tokens != null) {
                         // Fluxo antigo/direto (caso ocorra)
                         tokenManager.saveTokens(
-                            accessToken = loginResponse.tokens.access.token,
-                            refreshToken = loginResponse.tokens.refresh.token
+                            accessToken = loginResponse.tokens!!.access.token,
+                            refreshToken = loginResponse.tokens!!.refresh.token
                         )
                         _effect.emit(LoadingEffect(false))
                         _effect.emit(LoginSuccessEffect)
@@ -190,41 +191,69 @@ class TikTokViewModel @Inject constructor(
         }
     }
 
-    fun uploadCapturedVideo(uri: android.net.Uri?) {
+    fun uploadCapturedVideo(uri: android.net.Uri?, description: String) {
         if (uri == null) return
         
         viewModelScope.launch(Dispatchers.IO) {
             withContext(Dispatchers.Main) {
                 state.value.player?.pause()
-                _effect.emit(LoadingEffect(true, "Iniciando upload do vídeo..."))
+                _effect.emit(LoadingEffect(true, "Obtendo autorização de upload..."))
             }
 
             try {
+                // 1. Get Pre-signed URL (Usa socialApi com AuthInterceptor)
+                val presignedResponse = socialApi.getPresignedUrl()
+                if (!presignedResponse.isSuccessful || presignedResponse.body() == null) {
+                    throw Exception("Falha ao obter URL de upload: ${presignedResponse.code()}")
+                }
+                val presignedData = presignedResponse.body()!!
+
+                withContext(Dispatchers.Main) {
+                    _effect.emit(LoadingEffect(true, "Enviando vídeo para a nuvem..."))
+                }
+
+                // 2. Upload Binary to R2/S3 (Usa cloudSocialApi SEM AuthInterceptor e SEM Content-Type customizado)
                 val inputStream = context.contentResolver.openInputStream(uri)
                 val fileBytes = inputStream?.readBytes() ?: throw Exception("Falha ao ler o arquivo de vídeo")
                 inputStream.close()
 
-                val requestFile = fileBytes.toRequestBody("video/mp4".toMediaTypeOrNull())
-                val body = MultipartBody.Part.createFormData("video", "video_captured.mp4", requestFile)
+                // IMPORTANTE: Passamos null no MediaType para não enviar o header Content-Type,
+                // já que a assinatura do R2 fornecida só incluiu o header 'host'.
+                val requestBody = fileBytes.toRequestBody(null) 
+                val cloudResponse = cloudSocialApi.uploadToCloud(presignedData.uploadUrl, requestBody)
                 
-                val locale = context.resources.configuration.locales.get(0).toString()
-                val localeBody = locale.toRequestBody("text/plain".toMediaTypeOrNull())
+                if (!cloudResponse.isSuccessful) {
+                    throw Exception("Falha no upload binário: ${cloudResponse.code()} - ${cloudResponse.errorBody()?.string()}")
+                }
 
-                val response = socialApi.uploadVideo(body, localeBody)
+                withContext(Dispatchers.Main) {
+                    _effect.emit(LoadingEffect(true, "Finalizando publicação..."))
+                }
+
+                // 3. Confirm Post to Backend (Usa socialApi com AuthInterceptor)
+                val locale = context.resources.configuration.locales.get(0).toLanguageTag()
+                val confirmResponse = socialApi.postVideoConfirm(
+                    PostVideoRequest(
+                        postId = presignedData.postId,
+                        videoUrl = presignedData.publicUrl,
+                        content = description,
+                        locale = locale
+                    )
+                )
 
                 withContext(Dispatchers.Main) {
                     _effect.emit(LoadingEffect(false))
-                    if (response.isSuccessful) {
+                    if (confirmResponse.isSuccessful) {
                         _effect.emit(MessageEffect("Vídeo publicado com sucesso!"))
                     } else {
-                        _effect.emit(MessageEffect("Erro no upload (${response.code()}): ${response.message()}"))
+                        _effect.emit(MessageEffect("Erro ao confirmar publicação: ${confirmResponse.code()}"))
                     }
                     state.value.player?.play()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     _effect.emit(LoadingEffect(false))
-                    _effect.emit(MessageEffect("Erro de conexão no upload: ${e.message}"))
+                    _effect.emit(MessageEffect("Erro no processo de upload: ${e.message}"))
                     state.value.player?.play()
                 }
             }

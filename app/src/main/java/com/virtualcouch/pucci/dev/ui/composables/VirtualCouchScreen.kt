@@ -17,6 +17,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import android.Manifest
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
@@ -65,6 +66,11 @@ fun VirtualCouchScreen(
     val state by viewModel.state.collectAsState()
     val scope = rememberCoroutineScope()
     
+    // Dialog state for video description
+    var showDescriptionDialog by remember { mutableStateOf(false) }
+    var videoDescription by remember { mutableStateOf("") }
+    var pendingVideoUri by remember { mutableStateOf<Uri?>(null) }
+
     // Gerenciamento de Permissões
     val permissionState = rememberMultiplePermissionsState(
         permissions = listOf(
@@ -73,14 +79,11 @@ fun VirtualCouchScreen(
         )
     )
     
-    // Preparação para captura de vídeo
-    var videoUri by remember { mutableStateOf<Uri?>(null) }
-    
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CaptureVideo()
     ) { success ->
-        if (success) {
-            viewModel.uploadCapturedVideo(videoUri)
+        if (success && pendingVideoUri != null) {
+            showDescriptionDialog = true
         }
     }
 
@@ -135,7 +138,7 @@ fun VirtualCouchScreen(
                             "${context.packageName}.fileprovider",
                             videoFile
                         )
-                        videoUri = uri
+                        pendingVideoUri = uri
                         cameraLauncher.launch(uri)
                     } catch (e: Exception) {
                         showToast(context, "Erro ao preparar câmera: ${e.message}")
@@ -145,6 +148,50 @@ fun VirtualCouchScreen(
                 }
             }
         )
+
+        // Upload Description Dialog
+        if (showDescriptionDialog) {
+            AlertDialog(
+                onDismissRequest = { showDescriptionDialog = false },
+                title = { Text("Publicar vídeo", color = Color.White, fontWeight = FontWeight.Bold) },
+                text = {
+                    Column {
+                        Text("Dê uma legenda ao seu vídeo:", color = Color.LightGray, fontSize = 14.sp)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = videoDescription,
+                            onValueChange = { videoDescription = it },
+                            placeholder = { Text("O que está acontecendo?", color = Color.Gray) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = TextFieldDefaults.outlinedTextFieldColors(
+                                textColor = Color.White,
+                                focusedBorderColor = Color(0xFF1D4EEE),
+                                unfocusedBorderColor = Color.DarkGray
+                            )
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showDescriptionDialog = false
+                            viewModel.uploadCapturedVideo(pendingVideoUri, videoDescription)
+                            videoDescription = "" // Reset
+                        },
+                        colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF1D4EEE))
+                    ) {
+                        Text("Publicar", color = Color.White)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDescriptionDialog = false }) {
+                        Text("Cancelar", color = Color.Gray)
+                    }
+                },
+                backgroundColor = Color(0xFF1A1A1A),
+                shape = RoundedCornerShape(12.dp)
+            )
+        }
 
         if (isLoading) {
             Box(
@@ -173,7 +220,6 @@ fun VirtualCouchScreen(
                 is MessageEffect -> {
                     showToast(context, effect.message)
                 }
-                // ... (rest of effects handled below in Player)
                 else -> {}
             }
         }
