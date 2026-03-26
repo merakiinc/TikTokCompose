@@ -248,7 +248,7 @@ fun VirtualCouchTopBar(
             )
             Spacer(modifier = Modifier.width(20.dp))
             FeedTabText(
-                text = "Virtual Couch",
+                text = "For You",
                 isActive = activeFeed == FeedType.FOR_YOU,
                 onClick = { onFeedClick(FeedType.FOR_YOU) }
             )
