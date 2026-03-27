@@ -2,17 +2,20 @@ package com.virtualcouch.pucci.dev.ui.composables
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.outlined.MailOutline
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -24,6 +27,8 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun VirtualCouchBottomNavigation(
     modifier: Modifier = Modifier,
+    currentRoute: String? = "main",
+    onNavigate: (String) -> Unit = {},
     onAddClick: () -> Unit = {}
 ) {
     Row(
@@ -37,13 +42,15 @@ fun VirtualCouchBottomNavigation(
             modifier = Modifier.weight(1f),
             icon = Icons.Default.Home,
             label = "Sessões",
-            selected = true
+            selected = currentRoute == "main",
+            onClick = { onNavigate("main") }
         )
         NavigationItem(
             modifier = Modifier.weight(1f),
-            icon = Icons.Outlined.People,
-            label = "Comunidade",
-            selected = false
+            icon = Icons.Default.CalendarMonth,
+            label = "Agenda",
+            selected = currentRoute == "agenda",
+            onClick = { onNavigate("agenda") }
         )
         Box(
             modifier = Modifier
@@ -57,13 +64,15 @@ fun VirtualCouchBottomNavigation(
             modifier = Modifier.weight(1f),
             icon = Icons.Outlined.MailOutline,
             label = "Mensagens",
-            selected = false
+            selected = currentRoute == "messages",
+            onClick = { /* onNavigate("messages") */ }
         )
         NavigationItem(
             modifier = Modifier.weight(1f),
             icon = Icons.Outlined.Person,
-            label = "Meu Perfil",
-            selected = false
+            label = "Perfil",
+            selected = currentRoute == "profile",
+            onClick = { onNavigate("profile") }
         )
     }
 }
@@ -73,10 +82,15 @@ fun NavigationItem(
     modifier: Modifier = Modifier,
     icon: ImageVector,
     label: String,
-    selected: Boolean
+    selected: Boolean,
+    onClick: () -> Unit
 ) {
     Column(
-        modifier = modifier,
+        modifier = modifier.clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+            onClick = onClick
+        ),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -105,8 +119,6 @@ fun VirtualCouchAddButton(onClick: () -> Unit) {
             .clickable(onClick = onClick)
     ) {
         // Aesthetic layers maintained but with simplified therapist colors if needed
-        // For now keeping the TikTok-style layers as requested for aesthetic "richness" 
-        // but naming it correctly.
         
         // Dark Blue layer (left)
         Box(

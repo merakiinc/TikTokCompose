@@ -87,11 +87,17 @@ fun VirtualCouchScreen(
         }
     }
 
-    val mainPagerState = rememberPagerState(initialPage = 1) { 2 } // 0: Following, 1: For You
+    // 0: Seguindo, 1: For You, 2: Perfil
+    val mainPagerState = rememberPagerState(initialPage = 1) { 3 } 
 
     LaunchedEffect(mainPagerState.currentPage) {
-        val newFeed = if (mainPagerState.currentPage == 0) FeedType.FOLLOWING else FeedType.FOR_YOU
-        viewModel.switchFeed(newFeed)
+        if (mainPagerState.currentPage < 2) {
+            val newFeed = if (mainPagerState.currentPage == 0) FeedType.FOLLOWING else FeedType.FOR_YOU
+            viewModel.switchFeed(newFeed)
+        } else {
+            // No perfil pausamos o vídeo
+            viewModel.pause()
+        }
     }
 
     Box(
@@ -101,32 +107,43 @@ fun VirtualCouchScreen(
     ) {
         HorizontalPager(
             state = mainPagerState,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            userScrollEnabled = true
         ) { page ->
-            val feedType = if (page == 0) FeedType.FOLLOWING else FeedType.FOR_YOU
-            VideoPager(
-                state = state,
-                feedType = feedType,
-                viewModel = viewModel
-            )
+            when (page) {
+                0 -> VideoPager(state = state, feedType = FeedType.FOLLOWING, viewModel = viewModel)
+                1 -> VideoPager(state = state, feedType = FeedType.FOR_YOU, viewModel = viewModel)
+                2 -> ProfileScreen(videos = state.videos) // Exibindo vídeos do "For You" como mock
+            }
         }
 
-        VirtualCouchTopBar(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .statusBarsPadding(),
-            activeFeed = state.activeFeed,
-            onLogout = onLogout,
-            onFeedClick = { feed ->
-                val page = if (feed == FeedType.FOLLOWING) 0 else 1
-                scope.launch {
-                    mainPagerState.animateScrollToPage(page)
+        // Top bar só aparece no feed
+        if (mainPagerState.currentPage < 2) {
+            VirtualCouchTopBar(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding(),
+                activeFeed = if (mainPagerState.currentPage == 0) FeedType.FOLLOWING else FeedType.FOR_YOU,
+                onLogout = onLogout,
+                onFeedClick = { feed ->
+                    val targetPage = if (feed == FeedType.FOLLOWING) 0 else 1
+                    scope.launch {
+                        mainPagerState.animateScrollToPage(targetPage)
+                    }
                 }
-            }
-        )
+            )
+        }
         
         VirtualCouchBottomNavigation(
             modifier = Modifier.align(Alignment.BottomCenter),
+            currentRoute = if (mainPagerState.currentPage == 2) "profile" else "main",
+            onNavigate = { route ->
+                if (route == "profile") {
+                    scope.launch { mainPagerState.animateScrollToPage(2) }
+                } else if (route == "main") {
+                    scope.launch { mainPagerState.animateScrollToPage(1) }
+                }
+            },
             onAddClick = {
                 if (permissionState.allPermissionsGranted) {
                     try {
