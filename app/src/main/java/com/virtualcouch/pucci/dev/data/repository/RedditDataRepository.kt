@@ -32,7 +32,10 @@ class RedditDataRepository(
                         id = post.data?.id.orEmpty(),
                         mediaUri = video?.hlsUrl.orEmpty(),
                         previewImageUri = post.data?.preview?.images?.firstOrNull()?.source?.url.orEmpty(),
-                        aspectRatio = aspectRatio
+                        aspectRatio = aspectRatio,
+                        authorName = post.data?.author ?: "Psicólogo(a)",
+                        likes = (100..999).random().toString(),
+                        comments = (10..99).random().toString()
                     )
                 }
                 ?.filter { videoData ->

@@ -20,6 +20,7 @@ data class RedditResponse(
             @JsonClass(generateAdapter = true)
             data class Data2(
                 val id: String,
+                val author: String?,
                 @Json(name = "secure_media")
                 val secureMedia: SecureMedia?,
                 val preview: Preview?
