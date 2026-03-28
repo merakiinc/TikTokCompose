@@ -85,6 +85,9 @@ fun VirtualCouchScreen(
     var videoDescription by remember { mutableStateOf("") }
     var pendingVideoUri by remember { mutableStateOf<Uri?>(null) }
 
+    // Estado para evitar play durante transição de abas
+    var isTransitioningToProfile by remember { mutableStateOf(false) }
+
     val permissionState = rememberMultiplePermissionsState(
         permissions = listOf(
             Manifest.permission.CAMERA,
@@ -102,9 +105,12 @@ fun VirtualCouchScreen(
 
     val mainPagerState = rememberPagerState(initialPage = 1) { 3 } 
 
-    LaunchedEffect(currentRoute) {
-        if (currentRoute != "main") {
+    // Lógica Unificada de Pausa de Áudio
+    LaunchedEffect(currentRoute, mainPagerState.currentPage, isTransitioningToProfile) {
+        if (currentRoute != "main" || mainPagerState.currentPage == 2 || isTransitioningToProfile) {
             viewModel.pause()
+        } else {
+            viewModel.play()
         }
     }
 
@@ -112,8 +118,6 @@ fun VirtualCouchScreen(
         if (mainPagerState.currentPage < 2) {
             val newFeed = if (mainPagerState.currentPage == 0) FeedType.FOLLOWING else FeedType.FOR_YOU
             viewModel.switchFeed(newFeed)
-        } else {
-            viewModel.pause()
         }
     }
 
@@ -134,20 +138,19 @@ fun VirtualCouchScreen(
                     onNavigate = { route ->
                         when (route) {
                             "profile" -> {
-                                // Se não estiver na 'main', muda primeiro para mostrar o Pager
                                 if (currentRoute != "main") {
+                                    isTransitioningToProfile = true
                                     onNavigate("main")
                                 }
                                 scope.launch {
-                                    // Pequeno delay para garantir que o Pager foi recomposto
-                                    delay(50)
-                                    mainPagerState.animateScrollToPage(2)
+                                    mainPagerState.scrollToPage(2)
+                                    isTransitioningToProfile = false
                                 }
                             }
                             "main" -> {
                                 onNavigate("main")
                                 scope.launch {
-                                    mainPagerState.animateScrollToPage(1) // Volta para o For You
+                                    mainPagerState.animateScrollToPage(1)
                                 }
                             }
                             "agenda" -> {

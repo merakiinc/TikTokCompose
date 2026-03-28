@@ -3,6 +3,7 @@ package com.virtualcouch.pucci.dev.ui.composables
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -78,7 +80,7 @@ fun AgendaScreen(
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // Header
+        // Header (Fixe)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -135,39 +137,63 @@ fun AgendaScreen(
         }
 
         if (isMonthView) {
-            MonthHeader(
-                visibleMonth = state.firstVisibleMonth.yearMonth,
-                goToPrevious = {
-                    coroutineScope.launch {
-                        state.scrollToMonth(state.firstVisibleMonth.yearMonth.previousMonth)
-                    }
-                },
-                goToNext = {
-                    coroutineScope.launch {
-                        state.scrollToMonth(state.firstVisibleMonth.yearMonth.nextMonth)
-                    }
-                }
-            )
-            
-            HorizontalCalendar(
-                state = state,
-                dayContent = { day ->
-                    val hasEvents = eventsByDate.containsKey(day.date)
-                    Day(
-                        day = day,
-                        isSelected = selectedDate == day.date,
-                        hasEvents = hasEvents,
-                        onClick = {
-                            selectedDate = it.date
-                            isMonthView = false 
+            // Container para a visão mensal com suporte a swipe em toda a área
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(state.firstVisibleMonth) {
+                        detectHorizontalDragGestures { change, dragAmount ->
+                            change.consume()
+                            if (dragAmount > 50) { // Swipe Right -> Mês Anterior
+                                coroutineScope.launch {
+                                    state.animateScrollToMonth(state.firstVisibleMonth.yearMonth.previousMonth)
+                                }
+                            } else if (dragAmount < -50) { // Swipe Left -> Próximo Mês
+                                coroutineScope.launch {
+                                    state.animateScrollToMonth(state.firstVisibleMonth.yearMonth.nextMonth)
+                                }
+                            }
                         }
-                    )
-                },
-                monthHeader = {
-                    DaysOfWeekTitle(daysOfWeek = daysOfWeek)
-                },
-                modifier = Modifier.padding(horizontal = 8.dp)
-            )
+                    }
+            ) {
+                MonthHeader(
+                    visibleMonth = state.firstVisibleMonth.yearMonth,
+                    goToPrevious = {
+                        coroutineScope.launch {
+                            state.animateScrollToMonth(state.firstVisibleMonth.yearMonth.previousMonth)
+                        }
+                    },
+                    goToNext = {
+                        coroutineScope.launch {
+                            state.animateScrollToMonth(state.firstVisibleMonth.yearMonth.nextMonth)
+                        }
+                    }
+                )
+                
+                HorizontalCalendar(
+                    state = state,
+                    userScrollEnabled = true,
+                    dayContent = { day ->
+                        val hasEvents = eventsByDate.containsKey(day.date)
+                        Day(
+                            day = day,
+                            isSelected = selectedDate == day.date,
+                            hasEvents = hasEvents,
+                            onClick = {
+                                selectedDate = it.date
+                                isMonthView = false 
+                            }
+                        )
+                    },
+                    monthHeader = {
+                        DaysOfWeekTitle(daysOfWeek = daysOfWeek)
+                    },
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+                
+                // Espaço extra preenchido para garantir que o swipe funcione até o fim da tela
+                Box(modifier = Modifier.fillMaxSize())
+            }
         } else {
             DayView(
                 selectedDate = selectedDate,
@@ -226,7 +252,20 @@ fun DayView(
     events: List<EventEntity>,
     onDateSelected: (LocalDate) -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(selectedDate) {
+                detectHorizontalDragGestures { change, dragAmount ->
+                    change.consume()
+                    if (dragAmount > 50) { // Swipe Right -> Dia Anterior
+                        onDateSelected(selectedDate.minusDays(1))
+                    } else if (dragAmount < -50) { // Swipe Left -> Próximo Dia
+                        onDateSelected(selectedDate.plusDays(1))
+                    }
+                }
+            }
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
