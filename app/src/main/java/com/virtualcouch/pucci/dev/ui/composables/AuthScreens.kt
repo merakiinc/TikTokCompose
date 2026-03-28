@@ -10,7 +10,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.runtime.*
@@ -261,7 +261,6 @@ fun OtpScreen(phoneNumber: String, viewModel: TikTokViewModel) {
             modifier = Modifier.padding(bottom = 32.dp)
         )
 
-        // Single hidden BasicTextField to handle all input and backspace logic
         BasicTextField(
             value = otpValue,
             onValueChange = {
@@ -275,11 +274,10 @@ fun OtpScreen(phoneNumber: String, viewModel: TikTokViewModel) {
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier
                 .focusRequester(focusRequester)
-                .size(1.dp), // Hidden but functional
+                .size(1.dp), 
             textStyle = TextStyle(color = Color.Transparent)
         )
 
-        // Visual representation of the 6 boxes
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier
@@ -338,7 +336,7 @@ fun OtpScreen(phoneNumber: String, viewModel: TikTokViewModel) {
             fontWeight = FontWeight.Bold,
             modifier = Modifier
                 .padding(top = 24.dp)
-                .clickable { /* Opcional: Implementar reenvio */ }
+                .clickable {  }
         )
     }
 }
@@ -358,7 +356,7 @@ fun RegisterScreen(navController: NavController) {
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             IconButton(onClick = { navController.popBackStack() }) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Voltar", tint = Color.White)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar", tint = Color.White)
             }
         }
 
@@ -442,7 +440,7 @@ fun ForgotPasswordScreen(navController: NavController) {
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             IconButton(onClick = { navController.popBackStack() }) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Voltar", tint = Color.White)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar", tint = Color.White)
             }
         }
 

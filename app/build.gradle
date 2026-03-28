@@ -44,17 +44,25 @@ android {
     }
 }
 
+// Desativa o Kapt no plugin do Hilt para que ele use apenas o KSP
+hilt {
+    enableAggregatingTask = true
+}
+
+// Configuração do KSP para Room
+ksp {
+    arg("room.generateKotlin", "true")
+}
+
+// Configuração universal do Kotlin para Java 17
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
     kotlinOptions {
         jvmTarget = "17"
     }
 }
 
-ksp {
-    arg("room.generateKotlin", "true")
-}
-
 dependencies {
+    // Define a plataforma do Compose para todas as configurações
     def composeBom = platform('androidx.compose:compose-bom:2024.12.01')
     implementation composeBom
     androidTestImplementation composeBom

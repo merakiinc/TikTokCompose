@@ -13,7 +13,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GridView
-import androidx.compose.runtime.Composable
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,87 +30,117 @@ import com.virtualcouch.pucci.dev.domain.models.VideoData
 @Composable
 fun ProfileScreen(
     videos: List<VideoData> = emptyList(),
+    onLogout: () -> Unit = {},
     onVideoClick: (VideoData) -> Unit = {}
 ) {
-    Column(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        // Header
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+    var showMenu by remember { mutableStateOf(false) }
+
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        // Menu Button Top Right
+        IconButton(
+            onClick = { showMenu = true },
+            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).statusBarsPadding()
         ) {
-            Image(
-                painter = rememberAsyncImagePainter("https://api.dicebear.com/7.x/avataaars/svg?seed=Leonardo"),
-                contentDescription = "Avatar",
-                modifier = Modifier
-                    .size(90.dp)
-                    .clip(CircleShape)
-                    .border(1.dp, Color.Gray, CircleShape),
-                contentScale = ContentScale.Crop
-            )
-            Text(
-                text = "@leopucci",
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-                modifier = Modifier.padding(top = 12.dp)
-            )
+            Icon(Icons.Default.Menu, contentDescription = "Menu", tint = Color.White)
             
-            Row(
-                modifier = Modifier.padding(vertical = 20.dp),
-                horizontalArrangement = Arrangement.Center
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false },
+                modifier = Modifier.background(Color(0xFF2F2F2F))
             ) {
-                ProfileStat("120", "Seguindo")
-                ProfileStat("45k", "Seguidores")
-                ProfileStat("1.2M", "Curtidas")
-            }
-            
-            Button(
-                onClick = { },
-                colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF2F2F2F)),
-                modifier = Modifier
-                    .width(160.dp)
-                    .height(36.dp),
-                shape = RoundedCornerShape(4.dp),
-                elevation = null
-            ) {
-                Text("Editar perfil", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                DropdownMenuItem(onClick = {
+                    showMenu = false
+                    onLogout()
+                }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Sair", color = Color.White)
+                    }
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Tab selection (Mock)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceAround
-        ) {
-            Icon(
-                imageVector = Icons.Default.GridView,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(24.dp).padding(bottom = 8.dp)
-            )
-        }
-        Divider(color = Color.DarkGray, thickness = 0.5.dp)
-
-        // Video Grid
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(3),
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(1.dp),
-            horizontalArrangement = Arrangement.spacedBy(1.dp),
-            verticalArrangement = Arrangement.spacedBy(1.dp)
-        ) {
-            items(videos) { video ->
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Header
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Image(
-                    painter = rememberAsyncImagePainter(video.previewImageUri),
-                    contentDescription = null,
+                    painter = rememberAsyncImagePainter("https://api.dicebear.com/7.x/avataaars/svg?seed=Leonardo"),
+                    contentDescription = "Avatar",
                     modifier = Modifier
-                        .aspectRatio(3f / 4f)
-                        .background(Color.DarkGray)
-                        .clickable { onVideoClick(video) },
+                        .size(90.dp)
+                        .clip(CircleShape)
+                        .border(1.dp, Color.Gray, CircleShape),
                     contentScale = ContentScale.Crop
                 )
+                Text(
+                    text = "@leopucci",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+                
+                Row(
+                    modifier = Modifier.padding(vertical = 20.dp),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    ProfileStat("120", "Seguindo")
+                    ProfileStat("45k", "Seguidores")
+                    ProfileStat("1.2M", "Curtidas")
+                }
+                
+                Button(
+                    onClick = { },
+                    colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF2F2F2F)),
+                    modifier = Modifier
+                        .width(160.dp)
+                        .height(36.dp),
+                    shape = RoundedCornerShape(4.dp),
+                    elevation = null
+                ) {
+                    Text("Editar perfil", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Tab selection (Mock)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceAround
+            ) {
+                Icon(
+                    imageVector = Icons.Default.GridView,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp).padding(bottom = 8.dp)
+                )
+            }
+            Divider(color = Color.DarkGray, thickness = 0.5.dp)
+
+            // Video Grid
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(1.dp),
+                horizontalArrangement = Arrangement.spacedBy(1.dp),
+                verticalArrangement = Arrangement.spacedBy(1.dp)
+            ) {
+                items(videos) { video ->
+                    Image(
+                        painter = rememberAsyncImagePainter(video.previewImageUri),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .aspectRatio(3f / 4f)
+                            .background(Color.DarkGray)
+                            .clickable { onVideoClick(video) },
+                        contentScale = ContentScale.Crop
+                    )
+                }
             }
         }
     }

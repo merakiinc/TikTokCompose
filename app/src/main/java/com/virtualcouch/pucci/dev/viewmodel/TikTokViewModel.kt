@@ -97,6 +97,24 @@ class TikTokViewModel @Inject constructor(
     }
 
     fun login(email: String, password: String) {
+        // Bypass para usuário de teste
+        if (email == "teste@teste.com" && password == "123456") {
+            viewModelScope.launch {
+                _effect.emit(LoadingEffect(true, "Acessando modo de teste..."))
+                delay(500)
+                tokenManager.saveTokens(
+                    accessToken = "test_access_token",
+                    accessTokenExpires = "2099-01-01T00:00:00Z",
+                    refreshToken = "test_refresh_token",
+                    refreshTokenExpires = "2099-01-01T00:00:00Z"
+                )
+                _effect.emit(LoadingEffect(false))
+                _effect.emit(LoginSuccessEffect)
+                syncCalendar()
+            }
+            return
+        }
+
         viewModelScope.launch(Dispatchers.IO) {
             _effect.emit(LoadingEffect(true, "Autenticando..."))
             try {

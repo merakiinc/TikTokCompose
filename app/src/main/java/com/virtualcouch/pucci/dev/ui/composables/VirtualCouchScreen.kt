@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
@@ -68,8 +69,8 @@ import kotlinx.coroutines.launch
 fun VirtualCouchScreen(
     modifier: Modifier = Modifier,
     viewModel: TikTokViewModel = hiltViewModel(),
-    currentRoute: String = "main", // Adicionado para gerenciar abas
-    onNavigate: (String) -> Unit = {}, // Adicionado para gerenciar abas
+    currentRoute: String = "main", 
+    onNavigate: (String) -> Unit = {}, 
     onLogout: () -> Unit = {}
 ) {
     var isLoading by remember { mutableStateOf(false) }
@@ -78,15 +79,12 @@ fun VirtualCouchScreen(
     val state by viewModel.state.collectAsState()
     val scope = rememberCoroutineScope()
     
-    // BottomSheet state for comments
     val sheetState = rememberModalBottomSheetState(initialValue = ModalBottomSheetValue.Hidden)
     
-    // Dialog state for video description
     var showDescriptionDialog by remember { mutableStateOf(false) }
     var videoDescription by remember { mutableStateOf("") }
     var pendingVideoUri by remember { mutableStateOf<Uri?>(null) }
 
-    // Gerenciamento de Permissões
     val permissionState = rememberMultiplePermissionsState(
         permissions = listOf(
             Manifest.permission.CAMERA,
@@ -102,10 +100,8 @@ fun VirtualCouchScreen(
         }
     }
 
-    // 0: Seguindo, 1: For You, 2: Perfil
     val mainPagerState = rememberPagerState(initialPage = 1) { 3 } 
 
-    // Pausa o vídeo ao sair para a Agenda ou Perfil
     LaunchedEffect(currentRoute) {
         if (currentRoute != "main") {
             viewModel.pause()
@@ -134,23 +130,38 @@ fun VirtualCouchScreen(
             backgroundColor = Color.Black,
             bottomBar = {
                 VirtualCouchBottomNavigation(
-                    currentRoute = if (mainPagerState.currentPage == 2) "profile" else currentRoute,
+                    currentRoute = if (currentRoute == "main" && mainPagerState.currentPage == 2) "profile" else currentRoute,
                     onNavigate = { route ->
-                        if (route == "profile") {
-                            scope.launch { mainPagerState.animateScrollToPage(2) }
-                        } else {
-                            // Se estiver no perfil e clicar em Sessões/Agenda, volta pro pager
-                            if (mainPagerState.currentPage == 2 && (route == "main" || route == "agenda")) {
-                                scope.launch { mainPagerState.animateScrollToPage(1) }
+                        when (route) {
+                            "profile" -> {
+                                // Se não estiver na 'main', muda primeiro para mostrar o Pager
+                                if (currentRoute != "main") {
+                                    onNavigate("main")
+                                }
+                                scope.launch {
+                                    // Pequeno delay para garantir que o Pager foi recomposto
+                                    delay(50)
+                                    mainPagerState.animateScrollToPage(2)
+                                }
                             }
-                            onNavigate(route)
+                            "main" -> {
+                                onNavigate("main")
+                                scope.launch {
+                                    mainPagerState.animateScrollToPage(1) // Volta para o For You
+                                }
+                            }
+                            "agenda" -> {
+                                onNavigate("agenda")
+                            }
                         }
                     },
                     onAddClick = {
                         if (permissionState.allPermissionsGranted) {
                             try {
                                 val videoFile = File(context.cacheDir, "captured_video_${System.currentTimeMillis()}.mp4")
-                                if (!videoFile.parentFile.exists()) videoFile.parentFile.mkdirs()
+                                videoFile.parentFile?.let {
+                                    if (!it.exists()) it.mkdirs()
+                                }
                                 
                                 val uri = FileProvider.getUriForFile(
                                     context,
@@ -183,18 +194,15 @@ fun VirtualCouchScreen(
                         when (page) {
                             0 -> VideoPager(state = state, feedType = FeedType.FOLLOWING, viewModel = viewModel, onCommentsClick = { scope.launch { sheetState.show() } })
                             1 -> VideoPager(state = state, feedType = FeedType.FOR_YOU, viewModel = viewModel, onCommentsClick = { scope.launch { sheetState.show() } })
-                            2 -> ProfileScreen(videos = state.videos)
-                        }
-                    }
+                            2 -> ProfileScreen(videos = state.videos, onLogout = onLogout)
+                        }                    }
 
-                    // Top bar só aparece no feed
                     if (mainPagerState.currentPage < 2) {
                         VirtualCouchTopBar(
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
                                 .statusBarsPadding(),
                             activeFeed = if (mainPagerState.currentPage == 0) FeedType.FOLLOWING else FeedType.FOR_YOU,
-                            onLogout = onLogout,
                             onFeedClick = { feed ->
                                 val targetPage = if (feed == FeedType.FOLLOWING) 0 else 1
                                 scope.launch {
@@ -207,7 +215,6 @@ fun VirtualCouchScreen(
                     AgendaScreen()
                 }
 
-                // Upload Description Dialog
                 if (showDescriptionDialog) {
                     AlertDialog(
                         onDismissRequest = { showDescriptionDialog = false },
@@ -234,7 +241,7 @@ fun VirtualCouchScreen(
                                 onClick = {
                                     showDescriptionDialog = false
                                     viewModel.uploadCapturedVideo(pendingVideoUri, videoDescription)
-                                    videoDescription = "" // Reset
+                                    videoDescription = "" 
                                 },
                                 colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF1D4EEE))
                             ) {
@@ -321,7 +328,6 @@ fun CommentsSheetContent() {
 fun VirtualCouchTopBar(
     modifier: Modifier = Modifier,
     activeFeed: FeedType,
-    onLogout: () -> Unit = {},
     onFeedClick: (FeedType) -> Unit = {}
 ) {
     Box(modifier = modifier.fillMaxWidth()) {
@@ -342,19 +348,6 @@ fun VirtualCouchTopBar(
                 text = "For You",
                 isActive = activeFeed == FeedType.FOR_YOU,
                 onClick = { onFeedClick(FeedType.FOR_YOU) }
-            )
-        }
-        
-        IconButton(
-            onClick = onLogout,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 8.dp, top = 8.dp)
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.Logout,
-                contentDescription = "Logout",
-                tint = Color.White
             )
         }
     }
@@ -405,19 +398,16 @@ fun VideoPager(
     val videos = if (feedType == FeedType.FOR_YOU) state.videos else state.followingVideos
     val pagerState = rememberPagerState { videos.size }
 
-    // Logic to load more videos when reaching the end
     LaunchedEffect(pagerState.currentPage) {
         if (pagerState.currentPage >= videos.size - 5 && videos.isNotEmpty()) {
             viewModel.loadMoreVideos(feedType)
         }
     }
 
-    // Sync ViewModel with current pager index
     LaunchedEffect(pagerState.currentPage) {
         viewModel.updateIndex(pagerState.currentPage)
     }
 
-    // Force play when state.player is available or app resumes
     LaunchedEffect(state.player, pagerState.currentPage, state.activeFeed) {
         if (state.activeFeed == feedType) {
             state.playMediaAt(pagerState.currentPage)
@@ -458,7 +448,6 @@ fun VideoCard(
     var showPlayer by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     
-    // Create player view linked to the player instance
     val playerView = player?.let { rememberPlayerView(it) }
 
     ComposableLifecycle { _, event ->
@@ -503,26 +492,23 @@ fun VideoCard(
             )
         }
         
-        // Exibe thumbnail enquanto o player não renderizou o frame
         if (!showPlayer) {
             VideoThumbnail(video = video)
         }
 
-        // SIDE BAR & OVERLAYS
         Box(modifier = Modifier.fillMaxSize()) {
             VideoSideBar(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd) // DESCEU OS BOTÕES
-                    .padding(end = 8.dp, bottom = 40.dp), // Ajuste de posição
+                    .align(Alignment.BottomEnd) 
+                    .padding(end = 8.dp, bottom = 40.dp), 
                 video = video,
                 onCommentsClick = onCommentsClick
             )
             
-            // Text Info (Bottom Left)
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 12.dp, bottom = 40.dp) // SUBIU A DESCRIÇÃO
+                    .padding(start = 12.dp, bottom = 40.dp) 
             ) {
                 Text("@${video.authorName}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Spacer(modifier = Modifier.height(4.dp))
@@ -543,7 +529,6 @@ fun VideoSideBar(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        // Profile + Follow
         Box(contentAlignment = Alignment.BottomCenter) {
             Image(
                 painter = rememberAsyncImagePainter(video.authorAvatar),
@@ -569,7 +554,7 @@ fun VideoSideBar(
         Spacer(modifier = Modifier.height(8.dp))
 
         SideBarIcon(icon = Icons.Default.Favorite, label = video.likes, tint = if (video.isLiked) Color.Red else Color.White)
-        SideBarIcon(icon = Icons.Default.Comment, label = video.comments, onClick = onCommentsClick)
+        SideBarIcon(icon = Icons.AutoMirrored.Filled.Comment, label = video.comments, onClick = onCommentsClick)
         SideBarIcon(icon = Icons.Default.Share, label = video.shares)
     }
 }
@@ -621,9 +606,8 @@ fun Player(
         mutableStateOf(null)
     }
     
-    // LIKE ANIMATION STATE
     var showLikeHeart by remember { mutableStateOf(false) }
-    val heartScale by animateFloatAsState(targetValue = if (showLikeHeart) 1.2f else 0f, animationSpec = spring())
+    val heartScale by animateFloatAsState(targetValue = if (showLikeHeart) { 1.2f } else 0f, animationSpec = spring())
 
     val context = LocalContext.current
     Box(
@@ -634,7 +618,6 @@ fun Player(
                     onTap = { viewModel.onTappedScreen() },
                     onDoubleTap = {
                         showLikeHeart = true
-                        // Aqui você dispararia viewModel.likeVideo(id)
                     }
                 )
             },
@@ -650,7 +633,6 @@ fun Player(
             }
         )
         
-        // Double Tap Heart
         if (showLikeHeart) {
             Icon(
                 imageVector = Icons.Default.Favorite,
