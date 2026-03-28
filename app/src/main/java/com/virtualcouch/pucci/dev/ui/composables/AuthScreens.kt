@@ -47,14 +47,14 @@ fun AppNavigation(viewModel: TikTokViewModel) {
     var loadingMessage by remember { mutableStateOf("") }
     
     val startDestination = remember {
-        if (viewModel.hasValidSession()) "main" else "login"
+        if (viewModel.hasValidSession()) "main_hub" else "login"
     }
 
     LaunchedEffect(Unit) {
         viewModel.effect.collect { effect ->
             when (effect) {
                 is LoginSuccessEffect -> {
-                    navController.navigate("main") {
+                    navController.navigate("main_hub") {
                         popUpTo("login") { inclusive = true }
                     }
                 }
@@ -91,13 +91,16 @@ fun AppNavigation(viewModel: TikTokViewModel) {
                 val phoneNumber = backStackEntry.arguments?.getString("phoneNumber") ?: ""
                 OtpScreen(phoneNumber, viewModel)
             }
-            composable("main") {
+            composable("main_hub") {
+                var currentTab by remember { mutableStateOf("main") }
                 VirtualCouchScreen(
                     viewModel = viewModel,
+                    currentRoute = currentTab,
+                    onNavigate = { currentTab = it },
                     onLogout = {
                         viewModel.logout()
                         navController.navigate("login") {
-                            popUpTo("main") { inclusive = true }
+                            popUpTo("main_hub") { inclusive = true }
                         }
                     }
                 )
@@ -414,7 +417,7 @@ fun RegisterScreen(navController: NavController) {
         Spacer(modifier = Modifier.height(32.dp))
 
         Button(
-            onClick = { navController.navigate("main") },
+            onClick = { navController.navigate("main_hub") },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp),

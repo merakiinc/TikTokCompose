@@ -68,6 +68,8 @@ import kotlinx.coroutines.launch
 fun VirtualCouchScreen(
     modifier: Modifier = Modifier,
     viewModel: TikTokViewModel = hiltViewModel(),
+    currentRoute: String = "main", // Adicionado para gerenciar abas
+    onNavigate: (String) -> Unit = {}, // Adicionado para gerenciar abas
     onLogout: () -> Unit = {}
 ) {
     var isLoading by remember { mutableStateOf(false) }
@@ -103,6 +105,13 @@ fun VirtualCouchScreen(
     // 0: Seguindo, 1: For You, 2: Perfil
     val mainPagerState = rememberPagerState(initialPage = 1) { 3 } 
 
+    // Pausa o vídeo ao sair para a Agenda ou Perfil
+    LaunchedEffect(currentRoute) {
+        if (currentRoute != "main") {
+            viewModel.pause()
+        }
+    }
+
     LaunchedEffect(mainPagerState.currentPage) {
         if (mainPagerState.currentPage < 2) {
             val newFeed = if (mainPagerState.currentPage == 0) FeedType.FOLLOWING else FeedType.FOR_YOU
@@ -120,128 +129,141 @@ fun VirtualCouchScreen(
             CommentsSheetContent()
         }
     ) {
-        Box(
-            modifier = modifier
-                .fillMaxSize()
-                .background(Color.Black)
-        ) {
-            HorizontalPager(
-                state = mainPagerState,
-                modifier = Modifier.fillMaxSize(),
-                userScrollEnabled = true
-            ) { page ->
-                when (page) {
-                    0 -> VideoPager(state = state, feedType = FeedType.FOLLOWING, viewModel = viewModel, onCommentsClick = { scope.launch { sheetState.show() } })
-                    1 -> VideoPager(state = state, feedType = FeedType.FOR_YOU, viewModel = viewModel, onCommentsClick = { scope.launch { sheetState.show() } })
-                    2 -> ProfileScreen(videos = state.videos)
-                }
-            }
-
-            // Top bar só aparece no feed
-            if (mainPagerState.currentPage < 2) {
-                VirtualCouchTopBar(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .statusBarsPadding(),
-                    activeFeed = if (mainPagerState.currentPage == 0) FeedType.FOLLOWING else FeedType.FOR_YOU,
-                    onLogout = onLogout,
-                    onFeedClick = { feed ->
-                        val targetPage = if (feed == FeedType.FOLLOWING) 0 else 1
-                        scope.launch {
-                            mainPagerState.animateScrollToPage(targetPage)
+        Scaffold(
+            modifier = modifier.fillMaxSize(),
+            backgroundColor = Color.Black,
+            bottomBar = {
+                VirtualCouchBottomNavigation(
+                    currentRoute = if (mainPagerState.currentPage == 2) "profile" else currentRoute,
+                    onNavigate = { route ->
+                        if (route == "profile") {
+                            scope.launch { mainPagerState.animateScrollToPage(2) }
+                        } else {
+                            // Se estiver no perfil e clicar em Sessões/Agenda, volta pro pager
+                            if (mainPagerState.currentPage == 2 && (route == "main" || route == "agenda")) {
+                                scope.launch { mainPagerState.animateScrollToPage(1) }
+                            }
+                            onNavigate(route)
                         }
-                    }
-                )
-            }
-            
-            VirtualCouchBottomNavigation(
-                modifier = Modifier.align(Alignment.BottomCenter),
-                currentRoute = if (mainPagerState.currentPage == 2) "profile" else "main",
-                onNavigate = { route ->
-                    if (route == "profile") {
-                        scope.launch { mainPagerState.animateScrollToPage(2) }
-                    } else if (route == "main") {
-                        scope.launch { mainPagerState.animateScrollToPage(1) }
-                    }
-                },
-                onAddClick = {
-                    if (permissionState.allPermissionsGranted) {
-                        try {
-                            val videoFile = File(context.cacheDir, "captured_video_${System.currentTimeMillis()}.mp4")
-                            if (!videoFile.parentFile.exists()) videoFile.parentFile.mkdirs()
-                            
-                            val uri = FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                videoFile
-                            )
-                            pendingVideoUri = uri
-                            cameraLauncher.launch(uri)
-                        } catch (e: Exception) {
-                            showToast(context, "Erro ao preparar câmera: ${e.message}")
-                        }
-                    } else {
-                        permissionState.launchMultiplePermissionRequest()
-                    }
-                }
-            )
-
-            // Upload Description Dialog
-            if (showDescriptionDialog) {
-                AlertDialog(
-                    onDismissRequest = { showDescriptionDialog = false },
-                    title = { Text("Publicar vídeo", color = Color.White, fontWeight = FontWeight.Bold) },
-                    text = {
-                        Column {
-                            Text("Dê uma legenda ao seu vídeo:", color = Color.LightGray, fontSize = 14.sp)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = videoDescription,
-                                onValueChange = { videoDescription = it },
-                                placeholder = { Text("O que está acontecendo?", color = Color.Gray) },
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = TextFieldDefaults.outlinedTextFieldColors(
-                                    textColor = Color.White,
-                                    focusedBorderColor = Color(0xFF1D4EEE),
-                                    unfocusedBorderColor = Color.DarkGray
+                    },
+                    onAddClick = {
+                        if (permissionState.allPermissionsGranted) {
+                            try {
+                                val videoFile = File(context.cacheDir, "captured_video_${System.currentTimeMillis()}.mp4")
+                                if (!videoFile.parentFile.exists()) videoFile.parentFile.mkdirs()
+                                
+                                val uri = FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.fileprovider",
+                                    videoFile
                                 )
-                            )
+                                pendingVideoUri = uri
+                                cameraLauncher.launch(uri)
+                            } catch (e: Exception) {
+                                showToast(context, "Erro ao preparar câmera: ${e.message}")
+                            }
+                        } else {
+                            permissionState.launchMultiplePermissionRequest()
                         }
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                showDescriptionDialog = false
-                                viewModel.uploadCapturedVideo(pendingVideoUri, videoDescription)
-                                videoDescription = "" // Reset
-                            },
-                            colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF1D4EEE))
-                        ) {
-                            Text("Publicar", color = Color.White)
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showDescriptionDialog = false }) {
-                            Text("Cancelar", color = Color.Gray)
-                        }
-                    },
-                    backgroundColor = Color(0xFF1A1A1A),
-                    shape = RoundedCornerShape(12.dp)
+                    }
                 )
             }
+        ) { paddingValues ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            ) {
+                if (currentRoute == "main") {
+                    HorizontalPager(
+                        state = mainPagerState,
+                        modifier = Modifier.fillMaxSize(),
+                        userScrollEnabled = true
+                    ) { page ->
+                        when (page) {
+                            0 -> VideoPager(state = state, feedType = FeedType.FOLLOWING, viewModel = viewModel, onCommentsClick = { scope.launch { sheetState.show() } })
+                            1 -> VideoPager(state = state, feedType = FeedType.FOR_YOU, viewModel = viewModel, onCommentsClick = { scope.launch { sheetState.show() } })
+                            2 -> ProfileScreen(videos = state.videos)
+                        }
+                    }
 
-            if (isLoading) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.6f))
-                        .clickable(enabled = false) {},
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(color = Color.White)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(text = loadingMessage, color = Color.White, fontWeight = FontWeight.Bold)
+                    // Top bar só aparece no feed
+                    if (mainPagerState.currentPage < 2) {
+                        VirtualCouchTopBar(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .statusBarsPadding(),
+                            activeFeed = if (mainPagerState.currentPage == 0) FeedType.FOLLOWING else FeedType.FOR_YOU,
+                            onLogout = onLogout,
+                            onFeedClick = { feed ->
+                                val targetPage = if (feed == FeedType.FOLLOWING) 0 else 1
+                                scope.launch {
+                                    mainPagerState.animateScrollToPage(targetPage)
+                                }
+                            }
+                        )
+                    }
+                } else if (currentRoute == "agenda") {
+                    AgendaScreen()
+                }
+
+                // Upload Description Dialog
+                if (showDescriptionDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showDescriptionDialog = false },
+                        title = { Text("Publicar vídeo", color = Color.White, fontWeight = FontWeight.Bold) },
+                        text = {
+                            Column {
+                                Text("Dê uma legenda ao seu vídeo:", color = Color.LightGray, fontSize = 14.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = videoDescription,
+                                    onValueChange = { videoDescription = it },
+                                    placeholder = { Text("O que está acontecendo?", color = Color.Gray) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = TextFieldDefaults.outlinedTextFieldColors(
+                                        textColor = Color.White,
+                                        focusedBorderColor = Color(0xFF1D4EEE),
+                                        unfocusedBorderColor = Color.DarkGray
+                                    )
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    showDescriptionDialog = false
+                                    viewModel.uploadCapturedVideo(pendingVideoUri, videoDescription)
+                                    videoDescription = "" // Reset
+                                },
+                                colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF1D4EEE))
+                            ) {
+                                Text("Publicar", color = Color.White)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showDescriptionDialog = false }) {
+                                Text("Cancelar", color = Color.Gray)
+                            }
+                        },
+                        backgroundColor = Color(0xFF1A1A1A),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+
+                if (isLoading) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.6f))
+                            .clickable(enabled = false) {},
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = Color.White)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(text = loadingMessage, color = Color.White, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -489,7 +511,9 @@ fun VideoCard(
         // SIDE BAR & OVERLAYS
         Box(modifier = Modifier.fillMaxSize()) {
             VideoSideBar(
-                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp, bottom = 80.dp),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd) // DESCEU OS BOTÕES
+                    .padding(end = 8.dp, bottom = 40.dp), // Ajuste de posição
                 video = video,
                 onCommentsClick = onCommentsClick
             )
@@ -498,7 +522,7 @@ fun VideoCard(
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 12.dp, bottom = 24.dp)
+                    .padding(start = 12.dp, bottom = 40.dp) // SUBIU A DESCRIÇÃO
             ) {
                 Text("@${video.authorName}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Spacer(modifier = Modifier.height(4.dp))
