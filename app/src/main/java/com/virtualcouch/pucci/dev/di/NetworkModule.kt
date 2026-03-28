@@ -122,6 +122,12 @@ class NetworkModule {
 
     @Provides
     @Singleton
+    fun provideCalendarApi(@Named("virtual_couch_retrofit") retrofit: Retrofit): com.virtualcouch.pucci.dev.data.api.CalendarApi {
+        return retrofit.create(com.virtualcouch.pucci.dev.data.api.CalendarApi::class.java)
+    }
+
+    @Provides
+    @Singleton
     fun provideSocialApi(@Named("virtual_couch_retrofit") retrofit: Retrofit): SocialApi {
         return retrofit.create(SocialApi::class.java)
     }

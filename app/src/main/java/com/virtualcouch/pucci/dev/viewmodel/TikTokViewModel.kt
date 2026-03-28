@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.virtualcouch.pucci.dev.data.api.*
+import com.virtualcouch.pucci.dev.data.local.entities.EventEntity
+import com.virtualcouch.pucci.dev.data.repository.CalendarRepository
 import com.virtualcouch.pucci.dev.domain.repository.VideoDataRepository
 import com.virtualcouch.pucci.dev.ui.effect.*
 import com.virtualcouch.pucci.dev.ui.state.FeedType
@@ -33,6 +35,7 @@ class TikTokViewModel @Inject constructor(
     private val socialApi: SocialApi,
     @Named("cloud_social_api") private val cloudSocialApi: SocialApi,
     private val tokenManager: TokenManager,
+    private val calendarRepository: CalendarRepository,
     @ApplicationContext private val context: Context
 ): ViewModel() {
 
@@ -42,15 +45,55 @@ class TikTokViewModel @Inject constructor(
     private val _effect = MutableSharedFlow<VideoEffect>()
     val effect = _effect.asSharedFlow()
 
+    private val _isCheckingSession = MutableStateFlow(true)
+    val isCheckingSession = _isCheckingSession.asStateFlow()
+
     private var nextTokenForYou: String? = null
     private var nextTokenFollowing: String? = null
     private var isLoadingForYou = false
     private var isLoadingFollowing = false
     private var currentIndex = 0
 
+    val calendarEvents: Flow<List<EventEntity>> = calendarRepository.allEvents
+
     init {
+        checkSession()
         loadMoreVideos(FeedType.FOR_YOU)
         loadMoreVideos(FeedType.FOLLOWING)
+    }
+
+    private fun checkSession() {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (tokenManager.hasRefreshToken() && tokenManager.isAccessTokenExpired()) {
+                // Tenta refresh automático se expirado
+                try {
+                    val refreshResponse = authApi.refreshTokens(RefreshTokenRequest(refreshToken = tokenManager.getRefreshToken()!!))
+                    if (refreshResponse.isSuccessful && refreshResponse.body() != null) {
+                        val tokens = refreshResponse.body()!!
+                        tokenManager.saveTokens(
+                            accessToken = tokens.access.token,
+                            accessTokenExpires = tokens.access.expires,
+                            refreshToken = tokens.refresh.token,
+                            refreshTokenExpires = tokens.refresh.expires
+                        )
+                        syncCalendar()
+                    } else {
+                        tokenManager.clearTokens() // Refresh falhou
+                    }
+                } catch (e: Exception) {
+                    // Erro de rede no refresh, mantemos o que tem e o interceptor tentará depois
+                }
+            } else if (tokenManager.hasAccessToken()) {
+                syncCalendar()
+            }
+            _isCheckingSession.value = false
+        }
+    }
+
+    fun syncCalendar() {
+        viewModelScope.launch(Dispatchers.IO) {
+            calendarRepository.syncEvents()
+        }
     }
 
     fun login(email: String, password: String) {
@@ -61,21 +104,21 @@ class TikTokViewModel @Inject constructor(
                 if (response.isSuccessful && response.body() != null) {
                     val loginResponse = response.body()!!
                     
-                    // Busca o phoneNumber na raiz ou dentro do objeto user
                     val phone = loginResponse.phoneNumber ?: loginResponse.user?.phoneNumber
                     val method = loginResponse.method ?: "sms"
 
                     if (phone != null) {
-                        // Enviar OTP usando o número e o método retornados
                         sendOtp(phone, method)
                     } else if (loginResponse.tokens != null) {
-                        // Fluxo antigo/direto (caso ocorra)
                         tokenManager.saveTokens(
                             accessToken = loginResponse.tokens!!.access.token,
-                            refreshToken = loginResponse.tokens!!.refresh.token
+                            accessTokenExpires = loginResponse.tokens!!.access.expires,
+                            refreshToken = loginResponse.tokens!!.refresh.token,
+                            refreshTokenExpires = loginResponse.tokens!!.refresh.expires
                         )
                         _effect.emit(LoadingEffect(false))
                         _effect.emit(LoginSuccessEffect)
+                        syncCalendar()
                     } else {
                         _effect.emit(LoadingEffect(false))
                         _effect.emit(MessageEffect("Dados de login incompletos"))
@@ -123,10 +166,13 @@ class TikTokViewModel @Inject constructor(
                     val loginResponse = response.body()!!
                     tokenManager.saveTokens(
                         accessToken = loginResponse.tokens!!.access.token,
-                        refreshToken = loginResponse.tokens!!.refresh.token
+                        accessTokenExpires = loginResponse.tokens!!.access.expires,
+                        refreshToken = loginResponse.tokens!!.refresh.token,
+                        refreshTokenExpires = loginResponse.tokens!!.refresh.expires
                     )
                     _effect.emit(LoadingEffect(false))
                     _effect.emit(LoginSuccessEffect)
+                    syncCalendar()
                 } else {
                     _effect.emit(LoadingEffect(false))
                     _effect.emit(MessageEffect("Código de verificação inválido"))
@@ -142,7 +188,7 @@ class TikTokViewModel @Inject constructor(
         tokenManager.clearTokens()
     }
 
-    fun hasValidSession(): Boolean = tokenManager.hasAccessToken()
+    fun hasValidSession(): Boolean = tokenManager.hasAccessToken() || tokenManager.hasRefreshToken()
 
     fun loadMoreVideos(feedType: FeedType) {
         val isLoading = if (feedType == FeedType.FOR_YOU) isLoadingForYou else isLoadingFollowing

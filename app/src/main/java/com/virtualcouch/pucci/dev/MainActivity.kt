@@ -16,6 +16,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+        
+        // Mantém a Splash Screen na tela enquanto estiver verificando a sessão
+        splashScreen.setKeepOnScreenCondition {
+            viewModel.isCheckingSession.value
+        }
+
         setContent {
             VirtualCouchTheme {
                 AppNavigation(
@@ -25,4 +31,3 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
-

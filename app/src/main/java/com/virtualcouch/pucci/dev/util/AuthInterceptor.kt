@@ -18,8 +18,6 @@ class AuthInterceptor @Inject constructor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val originalRequest = chain.request()
         
-        // REGRA CRÍTICA: Só adiciona headers se for para a nossa API
-        // URLs do Cloudflare R2 ou S3 NÃO podem receber estes headers extras
         if (!originalRequest.url.host.contains("pucci.dev")) {
             return chain.proceed(originalRequest)
         }
@@ -28,7 +26,6 @@ class AuthInterceptor @Inject constructor(
             .header("User-Agent", "VirtualCouchMobile/1.0")
             .header("Accept", "application/json")
 
-        // Add Bearer token if available and not already present
         val token = tokenManager.getAccessToken()
         if (token != null && originalRequest.header("Authorization") == null) {
             requestBuilder.header("Authorization", "Bearer $token")
@@ -36,29 +33,37 @@ class AuthInterceptor @Inject constructor(
 
         val response = chain.proceed(requestBuilder.build())
 
-        // Handle 401 Unauthorized
         if (response.code == 401) {
-            val refreshToken = tokenManager.getRefreshToken()
-            if (refreshToken != null) {
-                response.close() 
-
+            val savedRefreshToken = tokenManager.getRefreshToken()
+            if (savedRefreshToken != null) {
+                // Tenta refresh
                 val refreshResponse = runBlocking {
                     try {
-                        authApiProvider.get().refreshTokens(RefreshTokenRequest(refreshToken))
+                        val api = authApiProvider.get()
+                        api.refreshTokens(RefreshTokenRequest(refreshToken = savedRefreshToken))
                     } catch (e: Exception) {
                         null
                     }
                 }
 
                 if (refreshResponse != null && refreshResponse.isSuccessful && refreshResponse.body() != null) {
+                    // Se deu certo o refresh, fecha a anterior e tenta de novo com o novo token
+                    response.close() 
+                    
                     val newTokens = refreshResponse.body()!!
-                    tokenManager.saveTokens(newTokens.access.token, newTokens.refresh.token)
+                    tokenManager.saveTokens(
+                        accessToken = newTokens.access.token,
+                        accessTokenExpires = newTokens.access.expires,
+                        refreshToken = newTokens.refresh.token,
+                        refreshTokenExpires = newTokens.refresh.expires
+                    )
 
                     val newRequest = originalRequest.newBuilder()
                         .header("Authorization", "Bearer ${newTokens.access.token}")
                         .build()
                     return chain.proceed(newRequest)
                 } else {
+                    // Se falhou o refresh, limpa e retorna a resposta 401 original (AINDA ABERTA)
                     tokenManager.clearTokens()
                 }
             }

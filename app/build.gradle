@@ -1,46 +1,41 @@
 plugins {
     id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
     id 'org.jetbrains.kotlin.plugin.compose'
     id 'kotlin-parcelize'
-    id 'dagger.hilt.android.plugin'
+    id 'com.google.dagger.hilt.android'
     id "com.google.devtools.ksp"
 }
 
 android {
-    namespace "com.virtualcouch.pucci.dev"
-    compileSdk 35
+    namespace = "com.virtualcouch.pucci.dev"
+    compileSdk = 35
 
     defaultConfig {
-        applicationId "com.virtualcouch.pucci.dev"
-        minSdk 23
-        targetSdk 35
-        versionCode 1
-        versionName "1.0"
+        applicationId = "com.virtualcouch.pucci.dev"
+        minSdk = 24
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0"
 
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
-            useSupportLibrary true
+            useSupportLibrary = true
         }
     }
 
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled = false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_21
-    }
-    kotlin {
-        compilerOptions {
-            jvmTarget = "JVM_21"
-            freeCompilerArgs.add("-Xannotation-default-target=param-property")
-        }
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures {
-        compose true
+        compose = true
     }
     packagingOptions {
         resources {
@@ -49,48 +44,70 @@ android {
     }
 }
 
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
+
+ksp {
+    arg("room.generateKotlin", "true")
+}
+
 dependencies {
+    def composeBom = platform('androidx.compose:compose-bom:2024.12.01')
+    implementation composeBom
+    androidTestImplementation composeBom
+    debugImplementation composeBom
 
     implementation 'androidx.core:core-ktx:1.15.0'
-    implementation platform('androidx.compose:compose-bom:2026.03.00')
     implementation 'androidx.compose.ui:ui'
     implementation 'androidx.compose.material:material'
     implementation 'androidx.compose.ui:ui-tooling-preview'
     implementation 'androidx.compose.runtime:runtime-livedata'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
     implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.8.7'
-    implementation 'androidx.activity:activity-compose:1.10.0'
+    implementation 'androidx.activity:activity-compose:1.9.3'
     implementation 'androidx.compose.material:material-icons-extended'
-    implementation "androidx.navigation:navigation-compose:2.8.8"
-    implementation "com.google.accompanist:accompanist-permissions:0.34.0"
-    implementation "androidx.core:core-splashscreen:1.1.0-rc01"
+    implementation "androidx.navigation:navigation-compose:2.8.5"
+    implementation "com.google.accompanist:accompanist-permissions:0.36.0"
+    implementation "androidx.core:core-splashscreen:1.0.1"
 
     // Coroutines
-    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1"
-    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0"
 
     // Retrofit
     implementation 'com.squareup.retrofit2:retrofit:2.11.0'
     implementation "com.squareup.retrofit2:converter-moshi:2.11.0"
     implementation "com.squareup.moshi:moshi:1.15.1"
     ksp "com.squareup.moshi:moshi-kotlin-codegen:1.15.1"
-    implementation "com.squareup.okhttp3:okhttp:5.0.0-alpha.14"
-    implementation "com.squareup.okhttp3:logging-interceptor:5.0.0-alpha.14"
+    implementation "com.squareup.okhttp3:okhttp:4.12.0"
+    implementation "com.squareup.okhttp3:logging-interceptor:4.12.0"
 
     // Coil for Compose
     implementation "io.coil-kt:coil-compose:2.7.0"
 
     // Dagger - Hilt
-    implementation "com.google.dagger:hilt-android:2.59.2"
+    implementation "com.google.dagger:hilt-android:2.52"
     implementation 'androidx.hilt:hilt-navigation-compose:1.2.0'
-    ksp "com.google.dagger:hilt-android-compiler:2.59.2"
+    ksp "com.google.dagger:hilt-android-compiler:2.52"
     ksp "androidx.hilt:hilt-compiler:1.2.0"
 
     // AndroidX Media 3
-    def mediaVersion = "1.5.1"
+    def mediaVersion = "1.5.0"
     implementation "androidx.media3:media3-exoplayer:$mediaVersion"
     implementation "androidx.media3:media3-exoplayer-hls:$mediaVersion"
     implementation "androidx.media3:media3-ui:$mediaVersion"
+
+    // Calendar
+    implementation "com.kizitonwose.calendar:compose:2.6.0"
+
+    // Room
+    def roomVersion = "2.6.1"
+    implementation "androidx.room:room-runtime:$roomVersion"
+    implementation "androidx.room:room-ktx:$roomVersion"
+    ksp "androidx.room:room-compiler:$roomVersion"
 
     // Diff Utils
     implementation "io.github.java-diff-utils:java-diff-utils:4.15"
@@ -99,7 +116,7 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
     androidTestImplementation "androidx.compose.ui:ui-test-junit4"
+    
     debugImplementation "androidx.compose.ui:ui-tooling"
     debugImplementation "androidx.compose.ui:ui-test-manifest"
-    debugImplementation 'com.squareup.leakcanary:leakcanary-android:3.0-alpha-8'
 }
