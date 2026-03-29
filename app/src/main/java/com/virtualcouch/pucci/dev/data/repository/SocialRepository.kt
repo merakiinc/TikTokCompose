@@ -9,7 +9,7 @@ import javax.inject.Singleton
 
 @Singleton
 class SocialRepository @Inject constructor(
-    private val api: SocialApi // O Hilt usará o provider padrão (sem @Named) do NetworkModule
+    private val api: SocialApi 
 ) {
     suspend fun getUserProfile(): UserProfileResponse? {
         return try {
@@ -30,9 +30,12 @@ class SocialRepository @Inject constructor(
                         mediaUri = it.videoUrl,
                         previewImageUri = it.thumbnailUrl,
                         authorName = "Eu",
+                        description = it.content,
                         likes = it.likes,
                         comments = it.comments,
-                        shares = it.shares
+                        shares = it.shares,
+                        isLiked = false,
+                        isFollowing = false
                     )
                 } ?: emptyList()
             } else {

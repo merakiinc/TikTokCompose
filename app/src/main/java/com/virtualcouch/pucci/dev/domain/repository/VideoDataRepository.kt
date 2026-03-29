@@ -1,6 +1,7 @@
 package com.virtualcouch.pucci.dev.domain.repository
 
 import com.virtualcouch.pucci.dev.domain.models.VideoData
+import com.virtualcouch.pucci.dev.ui.state.FeedType
 import kotlinx.coroutines.flow.Flow
 
 data class VideoListResult(
@@ -9,5 +10,5 @@ data class VideoListResult(
 )
 
 interface VideoDataRepository {
-    fun fetchData(after: String? = null): Flow<VideoListResult>
+    fun fetchData(feedType: FeedType, after: String? = null): Flow<VideoListResult>
 }

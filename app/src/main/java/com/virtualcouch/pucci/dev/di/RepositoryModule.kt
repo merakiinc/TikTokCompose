@@ -1,7 +1,7 @@
 package com.virtualcouch.pucci.dev.di
 
-import com.virtualcouch.pucci.dev.data.api.RedditApi
-import com.virtualcouch.pucci.dev.data.repository.RedditDataRepository
+import com.virtualcouch.pucci.dev.data.api.SocialApi
+import com.virtualcouch.pucci.dev.data.repository.VirtualCouchFeedRepository
 import com.virtualcouch.pucci.dev.data.repository.SampleVideoDataRepository
 import com.virtualcouch.pucci.dev.domain.repository.VideoDataRepository
 import dagger.Module
@@ -17,10 +17,10 @@ class RepositoryModule {
     @Provides
     @Singleton
     @Named("reddit_data")
-    fun provideRedditDataRepository(
-        api: RedditApi
+    fun provideVideoDataRepository(
+        api: SocialApi
     ): VideoDataRepository {
-        return RedditDataRepository(api)
+        return VirtualCouchFeedRepository(api)
     }
 
     @Provides

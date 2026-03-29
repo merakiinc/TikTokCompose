@@ -23,8 +23,8 @@ data class PostVideoRequest(
 
 @JsonClass(generateAdapter = true)
 data class UserProfileResponse(
-    val name: String,
-    val username: String,
+    val name: String?,
+    val username: String?,
     val avatarUrl: String?,
     val followersCount: String,
     val followingCount: String,
@@ -35,7 +35,7 @@ data class UserProfileResponse(
 data class UserVideoResponse(
     val id: String,
     val videoUrl: String,
-    val thumbnailUrl: String,
+    val thumbnailUrl: String?,
     val content: String,
     val likes: String,
     val comments: String,
@@ -47,6 +47,47 @@ data class InteractionRequest(
     val postId: String,
     val type: String, // 'VIEW' | 'LIKE' | 'COMMENT' | 'SHARE' | 'SKIP'
     val weight: Int
+)
+
+@JsonClass(generateAdapter = true)
+data class FeedResponse(
+    val videos: List<FeedVideo>,
+    val nextToken: String?
+)
+
+@JsonClass(generateAdapter = true)
+data class FeedVideo(
+    val id: String,
+    val videoUrl: String,
+    val hlsUrl: String?,
+    val dashUrl: String?,
+    val thumbnailUrl: String?,
+    val aspectRatio: Float?,
+    val author: FeedAuthor,
+    val description: String?,
+    val stats: FeedStats,
+    val userStatus: FeedUserStatus
+)
+
+@JsonClass(generateAdapter = true)
+data class FeedAuthor(
+    val id: String,
+    val name: String?,
+    val username: String?,
+    val avatarUrl: String?
+)
+
+@JsonClass(generateAdapter = true)
+data class FeedStats(
+    val likes: String,
+    val comments: String,
+    val shares: String
+)
+
+@JsonClass(generateAdapter = true)
+data class FeedUserStatus(
+    val isLiked: Boolean,
+    val isFollowing: Boolean
 )
 
 interface SocialApi {
@@ -77,4 +118,14 @@ interface SocialApi {
     suspend fun recordInteraction(
         @Body request: InteractionRequest
     ): Response<Unit>
+
+    @GET("v1/social/feed-videos")
+    suspend fun getForYouFeed(
+        @Query("after") after: String? = null
+    ): Response<FeedResponse>
+
+    @GET("v1/social/feed-videos-following")
+    suspend fun getFollowingFeed(
+        @Query("after") after: String? = null
+    ): Response<FeedResponse>
 }

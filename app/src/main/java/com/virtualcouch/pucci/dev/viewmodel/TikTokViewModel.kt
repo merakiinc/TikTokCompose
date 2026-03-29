@@ -1,6 +1,7 @@
 package com.virtualcouch.pucci.dev.viewmodel
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.Player
@@ -43,6 +44,7 @@ class TikTokViewModel @Inject constructor(
     @ApplicationContext private val context: Context
 ): ViewModel() {
 
+    private val tag = "TikTokViewModel"
     private val _state = MutableStateFlow(VideoUiState())
     val state = _state.asStateFlow()
 
@@ -250,11 +252,13 @@ class TikTokViewModel @Inject constructor(
 
         viewModelScope.launch(Dispatchers.IO) {
             if (feedType == FeedType.FOR_YOU) isLoadingForYou = true else isLoadingFollowing = true
+            Log.d(tag, "Loading more videos for $feedType")
             
-            repository.fetchData(token).collect { result ->
+            repository.fetchData(feedType, token).collect { result ->
                 if (feedType == FeedType.FOR_YOU) nextTokenForYou = result.nextToken else nextTokenFollowing = result.nextToken
                 
                 val newVideos = result.videos
+                Log.d(tag, "Received ${newVideos.size} videos for $feedType")
                 
                 withContext(Dispatchers.Main) {
                     _state.update { currentState ->
@@ -262,6 +266,7 @@ class TikTokViewModel @Inject constructor(
                         val updatedFollowing = if (feedType == FeedType.FOLLOWING) currentState.followingVideos + newVideos else currentState.followingVideos
                         
                         if (currentState.activeFeed == feedType) {
+                            Log.d(tag, "Adding ${newVideos.size} items to player")
                             currentState.player?.addMediaItems(newVideos.toMediaItems())
                         }
                         
@@ -278,11 +283,14 @@ class TikTokViewModel @Inject constructor(
 
     fun switchFeed(feedType: FeedType) {
         if (_state.value.activeFeed == feedType) return
+        Log.d(tag, "Switching feed to $feedType")
 
         _state.update { it.copy(activeFeed = feedType) }
         
         state.value.player?.let { player ->
-            player.setMediaItems(state.value.currentVideosList.toMediaItems())
+            val list = state.value.currentVideosList
+            Log.d(tag, "Resetting player with ${list.size} items from $feedType")
+            player.setMediaItems(list.toMediaItems())
             player.prepare()
         }
     }
@@ -382,9 +390,12 @@ class TikTokViewModel @Inject constructor(
     fun createPlayer(context: Context) {
         _state.update { state->
             if (state.player == null) {
+                Log.d(tag, "Creating new player instance")
                 val player = ExoPlayer.Builder(context).build().apply {
                     repeatMode = Player.REPEAT_MODE_ONE
-                    setMediaItems(state.currentVideosList.toMediaItems())
+                    val mediaItems = state.currentVideosList.toMediaItems()
+                    Log.d(tag, "Initializing player with ${mediaItems.size} items at index $currentIndex")
+                    setMediaItems(mediaItems)
                     seekToDefaultPosition(currentIndex)
                     prepare()
                     
@@ -409,12 +420,12 @@ class TikTokViewModel @Inject constructor(
     fun updateIndex(index: Int) {
         if (currentIndex != index) {
             val videos = state.value.currentVideosList
+            Log.d(tag, "Index changed: $currentIndex -> $index")
             
-            // Lógica de SKIP: verifica se pulou antes de 5 segundos
             state.value.player?.let { player ->
                 if (currentIndex < videos.size) {
                     val playbackTime = player.currentPosition
-                    if (playbackTime < 5000) { // Menos de 5 segundos
+                    if (playbackTime < 5000) {
                         videoSkipped(videos[currentIndex].id)
                     }
                 }
@@ -428,6 +439,7 @@ class TikTokViewModel @Inject constructor(
         if (isChangingConfigurations)
             return
         _state.update { state->
+            Log.d(tag, "Releasing player")
             state.player?.release()
             state.copy(player = null)
         }
@@ -436,19 +448,23 @@ class TikTokViewModel @Inject constructor(
     fun onPlayerError() {
         viewModelScope.launch(Dispatchers.Main) {
             state.value.player?.let { player ->
+                val error = player.playerError
+                Log.e(tag, "ExoPlayer Error: ${error?.message}, Code: ${error?.errorCode}")
                 _effect.emit(PlayerErrorEffect(
-                    message = player.playerError?.message.toString(),
-                    code = player.playerError?.errorCode ?: -1)
+                    message = error?.message.toString(),
+                    code = error?.errorCode ?: -1)
                 )
             }
         }
     }
 
     fun play() {
+        Log.d(tag, "Play requested")
         state.value.player?.play()
     }
 
     fun pause() {
+        Log.d(tag, "Pause requested")
         state.value.player?.pause()
     }
 

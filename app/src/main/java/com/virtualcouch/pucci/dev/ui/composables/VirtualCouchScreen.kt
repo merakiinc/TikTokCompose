@@ -525,7 +525,7 @@ fun VideoCard(
             ) {
                 Text("@${video.authorName}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Spacer(modifier = Modifier.height(4.dp))
-                Text("Legenda do vídeo incrível aqui... #terapia #foryou", color = Color.White, fontSize = 14.sp)
+                Text(video.description, color = Color.White, fontSize = 14.sp)
             }
         }
     }
