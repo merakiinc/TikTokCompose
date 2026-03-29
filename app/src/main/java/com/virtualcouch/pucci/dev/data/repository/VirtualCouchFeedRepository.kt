@@ -31,17 +31,16 @@ class VirtualCouchFeedRepository @Inject constructor(
                 Log.d(tag, "Received ${feedResponse.videos.size} videos from backend")
                 
                 val videoData = feedResponse.videos.map { video ->
-                    // Prioriza DASH (.mpd) para Android, depois HLS, depois a URL padrão
-                    val rawUri = video.dashUrl ?: video.hlsUrl ?: video.videoUrl
-                    // Limpeza radical de espaços
+                    // VOLTANDO PARA HLS COMO PRIORIDADE (já que funcionava no Reddit)
+                    val rawUri = video.hlsUrl ?: video.videoUrl ?: video.dashUrl ?: ""
                     val cleanUrl = rawUri.replace("\\s".toRegex(), "")
                     
-                    Log.d(tag, "Mapping video ID: ${video.id}, Final URL: $cleanUrl")
+                    Log.d(tag, "Mapping video ID: ${video.id}, URL: $cleanUrl")
                     
                     VideoData(
                         id = video.id,
                         mediaUri = cleanUrl,
-                        previewImageUri = video.thumbnailUrl ?: "", 
+                        previewImageUri = video.thumbnailUrl, // Pode ser null
                         aspectRatio = video.aspectRatio ?: 0.5625f,
                         authorName = video.author.username ?: video.author.name?.split(" ")?.firstOrNull() ?: "Psicólogo",
                         authorAvatar = video.author.avatarUrl ?: "https://api.dicebear.com/7.x/avataaars/svg?seed=${video.author.id}",
@@ -55,7 +54,7 @@ class VirtualCouchFeedRepository @Inject constructor(
                 }
                 emit(VideoListResult(videoData, feedResponse.nextToken))
             } else {
-                Log.e(tag, "Feed load failed: ${response.code()} - ${response.errorBody()?.string()}")
+                Log.e(tag, "Feed load failed: ${response.code()}")
                 emit(VideoListResult(emptyList(), null))
             }
         } catch (throwable: Throwable) {

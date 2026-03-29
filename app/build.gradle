@@ -103,6 +103,7 @@ dependencies {
     implementation "androidx.media3:media3-exoplayer-hls:$mediaVersion"
     implementation "androidx.media3:media3-exoplayer-dash:$mediaVersion"
     implementation "androidx.media3:media3-ui:$mediaVersion"
+    implementation "androidx.media3:media3-ui:$mediaVersion"
 
     // Calendar
     implementation "com.kizitonwose.calendar:compose:2.6.0"

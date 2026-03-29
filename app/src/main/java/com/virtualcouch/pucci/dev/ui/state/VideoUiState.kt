@@ -26,7 +26,7 @@ data class VideoUiState(
 
             player.seekToDefaultPosition(position)
             player.playWhenReady = true
-            player.prepare()
+            // Não chamamos prepare() aqui para não resetar o buffer dos próximos vídeos
         }
     }
 }

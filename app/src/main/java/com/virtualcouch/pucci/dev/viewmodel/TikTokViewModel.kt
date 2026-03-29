@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultLoadControl
 import com.virtualcouch.pucci.dev.data.api.*
 import com.virtualcouch.pucci.dev.data.local.entities.EventEntity
 import com.virtualcouch.pucci.dev.data.repository.CalendarRepository
@@ -332,6 +333,7 @@ class TikTokViewModel @Inject constructor(
             }
 
             try {
+                // 1. Get Pre-signed URL
                 val presignedResponse = socialApi.getPresignedUrl()
                 if (!presignedResponse.isSuccessful || presignedResponse.body() == null) {
                     throw Exception("Falha ao obter URL de upload: ${presignedResponse.code()}")
@@ -342,21 +344,51 @@ class TikTokViewModel @Inject constructor(
                     _effect.emit(LoadingEffect(true, "Enviando vídeo para a nuvem..."))
                 }
 
+                // 2. Upload Binary with Retry logic
                 val inputStream = context.contentResolver.openInputStream(uri)
                 val fileBytes = inputStream?.readBytes() ?: throw Exception("Falha ao ler o arquivo de vídeo")
                 inputStream.close()
-
                 val requestBody = fileBytes.toRequestBody(null) 
-                val cloudResponse = cloudSocialApi.uploadToCloud(presignedData.uploadUrl, requestBody)
-                
-                if (!cloudResponse.isSuccessful) {
-                    throw Exception("Falha no upload binário: ${cloudResponse.code()} - ${cloudResponse.errorBody()?.string()}")
+
+                var uploadSuccess = false
+                var retryCount = 0
+                val maxRetries = 3
+
+                while (!uploadSuccess && retryCount <= maxRetries) {
+                    try {
+                        if (retryCount > 0) {
+                            withContext(Dispatchers.Main) {
+                                _effect.emit(LoadingEffect(true, "Falha na conexão. Tentativa $retryCount de $maxRetries..."))
+                            }
+                            delay(2000) // Aguarda 2 segundos antes de tentar de novo
+                        }
+                        
+                        Log.d(tag, "Uploading binary to R2... Attempt ${retryCount + 1}")
+                        val cloudResponse = cloudSocialApi.uploadToCloud(presignedData.uploadUrl, requestBody)
+                        
+                        if (cloudResponse.isSuccessful) {
+                            uploadSuccess = true
+                        } else {
+                            Log.e(tag, "Upload binary failed: ${cloudResponse.code()}")
+                            if (cloudResponse.code() == 403 || cloudResponse.code() == 401) {
+                                throw Exception("Erro de permissão no storage (403).")
+                            }
+                            retryCount++
+                        }
+                    } catch (e: java.io.IOException) {
+                        Log.e(tag, "Network error during upload: ${e.message}")
+                        retryCount++
+                        if (retryCount > maxRetries) throw e
+                    }
                 }
+
+                if (!uploadSuccess) throw Exception("Falha ao subir vídeo após $maxRetries tentativas.")
 
                 withContext(Dispatchers.Main) {
                     _effect.emit(LoadingEffect(true, "Finalizando publicação..."))
                 }
 
+                // 3. Confirm Post
                 val locale = context.resources.configuration.locales.get(0).toLanguageTag()
                 val confirmResponse = socialApi.postVideoConfirm(
                     PostVideoRequest(
@@ -390,26 +422,50 @@ class TikTokViewModel @Inject constructor(
     fun createPlayer(context: Context) {
         _state.update { state->
             if (state.player == null) {
-                Log.d(tag, "Creating new player instance")
-                val player = ExoPlayer.Builder(context).build().apply {
-                    repeatMode = Player.REPEAT_MODE_ONE
-                    val mediaItems = state.currentVideosList.toMediaItems()
-                    Log.d(tag, "Initializing player with ${mediaItems.size} items at index $currentIndex")
-                    setMediaItems(mediaItems)
-                    seekToDefaultPosition(currentIndex)
-                    prepare()
-                    
-                    addListener(object : Player.Listener {
-                        override fun onPlaybackStateChanged(playbackState: Int) {
-                            if (playbackState == Player.STATE_ENDED) {
-                                val videos = _state.value.currentVideosList
-                                if (currentIndex < videos.size) {
-                                    onVideoFinished(videos[currentIndex].id)
+                Log.d(tag, "Creating new player instance with aggressive buffering")
+                
+                val loadControl = DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(15000, 50000, 1000, 1500)
+                    .build()
+
+                val player = ExoPlayer.Builder(context)
+                    .setLoadControl(loadControl)
+                    .build().apply {
+                        repeatMode = Player.REPEAT_MODE_ONE
+                        val mediaItems = state.currentVideosList.toMediaItems()
+                        Log.d(tag, "Initializing player with ${mediaItems.size} items at index $currentIndex")
+                        setMediaItems(mediaItems)
+                        seekToDefaultPosition(currentIndex)
+                        prepare()
+                        
+                        addListener(object : Player.Listener {
+                            override fun onPlaybackStateChanged(playbackState: Int) {
+                                val stateName = when(playbackState) {
+                                    Player.STATE_IDLE -> "IDLE"
+                                    Player.STATE_BUFFERING -> "BUFFERING"
+                                    Player.STATE_READY -> "READY"
+                                    Player.STATE_ENDED -> "ENDED"
+                                    else -> "UNKNOWN"
+                                }
+                                Log.d(tag, "Player State Changed: $stateName")
+
+                                if (playbackState == Player.STATE_ENDED) {
+                                    val videos = _state.value.currentVideosList
+                                    if (currentIndex < videos.size) {
+                                        onVideoFinished(videos[currentIndex].id)
+                                    }
                                 }
                             }
-                        }
-                    })
-                }
+                            
+                            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                                Log.e(tag, "ExoPlayer Error: ${error.message}, Code: ${error.errorCode}")
+                                if (error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_UNSPECIFIED) {
+                                    Log.w(tag, "Generic IO Error. Attempting to re-prepare...")
+                                    prepare()
+                                }
+                            }
+                        })
+                    }
                 state.copy(player = player)
             }
             else
@@ -446,16 +502,6 @@ class TikTokViewModel @Inject constructor(
     }
 
     fun onPlayerError() {
-        viewModelScope.launch(Dispatchers.Main) {
-            state.value.player?.let { player ->
-                val error = player.playerError
-                Log.e(tag, "ExoPlayer Error: ${error?.message}, Code: ${error?.errorCode}")
-                _effect.emit(PlayerErrorEffect(
-                    message = error?.message.toString(),
-                    code = error?.errorCode ?: -1)
-                )
-            }
-        }
     }
 
     fun play() {

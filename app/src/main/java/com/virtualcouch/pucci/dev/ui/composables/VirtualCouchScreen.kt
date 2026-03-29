@@ -19,6 +19,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import android.Manifest
+import android.util.Log
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -485,11 +486,18 @@ fun VideoCard(
             ) { event->
                 when (event) {
                     Player.EVENT_RENDERED_FIRST_FRAME -> {
+                        Log.d("VideoCard", "First frame rendered for ${video.id}")
                         showPlayer = true
                     }
                     Player.EVENT_PLAYER_ERROR -> {
                         viewModel.onPlayerError()
                     }
+                }
+                
+                // Backup: se o player estiver READY mas o evento de frame não disparou,
+                // forçamos a exibição após um pequeno delay
+                if (player.playbackState == Player.STATE_READY) {
+                    showPlayer = true
                 }
             }
             Player(
@@ -591,16 +599,28 @@ fun SideBarIcon(
 fun BoxScope.VideoThumbnail(
     video: VideoData
 ) {
-    Image(
-        painter = rememberAsyncImagePainter(
-            model = video.previewImageUri
-        ),
-        contentDescription = "Preview",
-        modifier = Modifier
-            .aspectRatio(video.aspectRatio ?: 1f)
-            .align(Alignment.Center)
-            .fillMaxSize()
-    )
+    if (!video.previewImageUri.isNullOrBlank()) {
+        Image(
+            painter = rememberAsyncImagePainter(
+                model = video.previewImageUri
+            ),
+            contentDescription = "Preview",
+            modifier = Modifier
+                .aspectRatio(video.aspectRatio ?: 1f)
+                .align(Alignment.Center)
+                .fillMaxSize()
+        )
+    } else {
+        // Fallback para quando não há thumbnail
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.DarkGray.copy(alpha = 0.3f)),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(color = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(30.dp))
+        }
+    }
 }
 
 @OptIn(ExperimentalAnimationApi::class)

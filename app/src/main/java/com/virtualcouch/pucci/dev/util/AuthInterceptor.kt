@@ -1,5 +1,6 @@
 package com.virtualcouch.pucci.dev.util
 
+import android.util.Log
 import com.virtualcouch.pucci.dev.data.api.AuthApi
 import com.virtualcouch.pucci.dev.data.api.RefreshTokenRequest
 import kotlinx.coroutines.runBlocking
@@ -15,6 +16,8 @@ class AuthInterceptor @Inject constructor(
     private val authApiProvider: Provider<AuthApi>
 ) : Interceptor {
 
+    private val tag = "AuthInterceptor"
+
     override fun intercept(chain: Interceptor.Chain): Response {
         val originalRequest = chain.request()
         
@@ -22,53 +25,73 @@ class AuthInterceptor @Inject constructor(
             return chain.proceed(originalRequest)
         }
 
-        val requestBuilder = originalRequest.newBuilder()
-            .header("User-Agent", "VirtualCouchMobile/1.0")
-            .header("Accept", "application/json")
+        // 1. Tenta a requisição original
+        val response = chain.proceed(buildRequestWithToken(originalRequest))
 
-        val token = tokenManager.getAccessToken()
-        if (token != null && originalRequest.header("Authorization") == null) {
-            requestBuilder.header("Authorization", "Bearer $token")
-        }
-
-        val response = chain.proceed(requestBuilder.build())
-
+        // 2. Se deu 401, precisamos de um novo token
         if (response.code == 401) {
-            val savedRefreshToken = tokenManager.getRefreshToken()
-            if (savedRefreshToken != null) {
-                // Tenta refresh
-                val refreshResponse = runBlocking {
-                    try {
-                        val api = authApiProvider.get()
-                        api.refreshTokens(RefreshTokenRequest(refreshToken = savedRefreshToken))
-                    } catch (e: Exception) {
-                        null
-                    }
+            synchronized(this) {
+                // Checa se outro thread já atualizou o token enquanto este esperava o lock
+                val currentToken = tokenManager.getAccessToken()
+                val requestToken = originalRequest.header("Authorization")?.removePrefix("Bearer ")
+                
+                // Se o token no storage já é diferente do que usamos nesta requisição, 
+                // significa que o refresh JÁ aconteceu em outro thread.
+                if (currentToken != null && currentToken != requestToken) {
+                    Log.i(tag, "Token already refreshed by another thread. Retrying with new token.")
+                    response.close()
+                    return chain.proceed(buildRequestWithToken(originalRequest))
                 }
 
-                if (refreshResponse != null && refreshResponse.isSuccessful && refreshResponse.body() != null) {
-                    // Se deu certo o refresh, fecha a anterior e tenta de novo com o novo token
-                    response.close() 
-                    
-                    val newTokens = refreshResponse.body()!!
-                    tokenManager.saveTokens(
-                        accessToken = newTokens.access.token,
-                        accessTokenExpires = newTokens.access.expires,
-                        refreshToken = newTokens.refresh.token,
-                        refreshTokenExpires = newTokens.refresh.expires
-                    )
+                // Se ainda é o mesmo token, então este thread fará o refresh
+                Log.w(tag, "Token expired (401). Attempting synchronized refresh...")
+                val savedRefreshToken = tokenManager.getRefreshToken()
+                
+                if (savedRefreshToken != null) {
+                    val refreshResponse = runBlocking {
+                        try {
+                            authApiProvider.get().refreshTokens(RefreshTokenRequest(refreshToken = savedRefreshToken))
+                        } catch (e: Exception) {
+                            Log.e(tag, "Critical error during refresh call", e)
+                            null
+                        }
+                    }
 
-                    val newRequest = originalRequest.newBuilder()
-                        .header("Authorization", "Bearer ${newTokens.access.token}")
-                        .build()
-                    return chain.proceed(newRequest)
+                    if (refreshResponse != null && refreshResponse.isSuccessful && refreshResponse.body() != null) {
+                        val newTokens = refreshResponse.body()!!
+                        Log.i(tag, "Refresh successful. Saving new tokens.")
+                        
+                        tokenManager.saveTokens(
+                            accessToken = newTokens.access.token,
+                            accessTokenExpires = newTokens.access.expires,
+                            refreshToken = newTokens.refresh.token,
+                            refreshTokenExpires = newTokens.refresh.expires
+                        )
+
+                        response.close()
+                        return chain.proceed(buildRequestWithToken(originalRequest))
+                    } else {
+                        Log.e(tag, "Refresh FAILED (code: ${refreshResponse?.code()}). Logging out user.")
+                        tokenManager.clearTokens()
+                    }
                 } else {
-                    // Se falhou o refresh, limpa e retorna a resposta 401 original (AINDA ABERTA)
-                    tokenManager.clearTokens()
+                    Log.w(tag, "No refresh token found. Can't recover from 401.")
                 }
             }
         }
 
         return response
+    }
+
+    private fun buildRequestWithToken(request: okhttp3.Request): okhttp3.Request {
+        val builder = request.newBuilder()
+            .header("User-Agent", "VirtualCouchMobile/1.0")
+            .header("Accept", "application/json")
+        
+        val token = tokenManager.getAccessToken()
+        if (token != null) {
+            builder.header("Authorization", "Bearer $token")
+        }
+        return builder.build()
     }
 }

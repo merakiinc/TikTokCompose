@@ -62,7 +62,10 @@ class NetworkModule {
     fun provideCloudOkHttpClient(loggingInterceptor: HttpLoggingInterceptor): OkHttpClient {
         return OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
-            .build() // TOTALMENTE LIMPO, sem AuthInterceptor
+            .connectTimeout(5, java.util.concurrent.TimeUnit.MINUTES)
+            .readTimeout(5, java.util.concurrent.TimeUnit.MINUTES)
+            .writeTimeout(5, java.util.concurrent.TimeUnit.MINUTES)
+            .build() 
     }
 
     @Provides
