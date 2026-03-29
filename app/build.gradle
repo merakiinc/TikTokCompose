@@ -49,11 +49,6 @@ hilt {
     enableAggregatingTask = true
 }
 
-// Configuração do KSP para Room
-ksp {
-    arg("room.generateKotlin", "true")
-}
-
 // Configuração universal do Kotlin para Java 17
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
     kotlinOptions {

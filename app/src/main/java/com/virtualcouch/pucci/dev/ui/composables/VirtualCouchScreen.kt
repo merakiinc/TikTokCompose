@@ -197,7 +197,11 @@ fun VirtualCouchScreen(
                         when (page) {
                             0 -> VideoPager(state = state, feedType = FeedType.FOLLOWING, viewModel = viewModel, onCommentsClick = { scope.launch { sheetState.show() } })
                             1 -> VideoPager(state = state, feedType = FeedType.FOR_YOU, viewModel = viewModel, onCommentsClick = { scope.launch { sheetState.show() } })
-                            2 -> ProfileScreen(videos = state.videos, onLogout = onLogout)
+                            2 -> ProfileScreen(
+                                profile = state.userProfile,
+                                videos = state.userVideos,
+                                onLogout = onLogout
+                            )
                         }                    }
 
                     if (mainPagerState.currentPage < 2) {
@@ -491,7 +495,8 @@ fun VideoCard(
             Player(
                 playerView = playerView,
                 viewModel = viewModel,
-                aspectRatio = video.aspectRatio ?: 1f
+                aspectRatio = video.aspectRatio ?: 1f,
+                postId = video.id
             )
         }
         
@@ -505,7 +510,12 @@ fun VideoCard(
                     .align(Alignment.BottomEnd) 
                     .padding(end = 8.dp, bottom = 40.dp), 
                 video = video,
-                onCommentsClick = onCommentsClick
+                onCommentsClick = {
+                    viewModel.commentClicked(video.id)
+                    onCommentsClick()
+                },
+                onLikeClick = { viewModel.likeVideo(video.id) },
+                onShareClick = { viewModel.shareVideo(video.id) }
             )
             
             Column(
@@ -525,7 +535,9 @@ fun VideoCard(
 fun VideoSideBar(
     modifier: Modifier = Modifier,
     video: VideoData,
-    onCommentsClick: () -> Unit
+    onCommentsClick: () -> Unit,
+    onLikeClick: () -> Unit,
+    onShareClick: () -> Unit
 ) {
     Column(
         modifier = modifier,
@@ -556,9 +568,9 @@ fun VideoSideBar(
         
         Spacer(modifier = Modifier.height(8.dp))
 
-        SideBarIcon(icon = Icons.Default.Favorite, label = video.likes, tint = if (video.isLiked) Color.Red else Color.White)
+        SideBarIcon(icon = Icons.Default.Favorite, label = video.likes, tint = if (video.isLiked) Color.Red else Color.White, onClick = onLikeClick)
         SideBarIcon(icon = Icons.AutoMirrored.Filled.Comment, label = video.comments, onClick = onCommentsClick)
-        SideBarIcon(icon = Icons.Default.Share, label = video.shares)
+        SideBarIcon(icon = Icons.Default.Share, label = video.shares, onClick = onShareClick)
     }
 }
 
@@ -597,7 +609,8 @@ fun Player(
     playerView: PlayerView,
     viewModel: TikTokViewModel,
     modifier: Modifier = Modifier,
-    aspectRatio: Float
+    aspectRatio: Float,
+    postId: String
 ) {
     var animatedIconDrawable by remember {
         mutableStateOf(0)
@@ -621,6 +634,7 @@ fun Player(
                     onTap = { viewModel.onTappedScreen() },
                     onDoubleTap = {
                         showLikeHeart = true
+                        viewModel.likeVideo(postId)
                     }
                 )
             },

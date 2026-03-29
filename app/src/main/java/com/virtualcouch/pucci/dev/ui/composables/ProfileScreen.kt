@@ -25,15 +25,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.rememberAsyncImagePainter
+import com.virtualcouch.pucci.dev.domain.models.UserProfile
 import com.virtualcouch.pucci.dev.domain.models.VideoData
 
 @Composable
 fun ProfileScreen(
+    profile: UserProfile? = null,
     videos: List<VideoData> = emptyList(),
     onLogout: () -> Unit = {},
     onVideoClick: (VideoData) -> Unit = {}
 ) {
     var showMenu by remember { mutableStateOf(false) }
+
+    val avatar = profile?.avatarUrl ?: "https://api.dicebear.com/7.x/avataaars/svg?seed=Leonardo"
+    val username = profile?.username?.let { if (it.startsWith("@")) it else "@$it" } ?: "@usuario"
+    val followers = profile?.followersCount ?: "0"
+    val following = profile?.followingCount ?: "0"
+    val likes = profile?.likesCount ?: "0"
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         // Menu Button Top Right
@@ -68,7 +76,7 @@ fun ProfileScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Image(
-                    painter = rememberAsyncImagePainter("https://api.dicebear.com/7.x/avataaars/svg?seed=Leonardo"),
+                    painter = rememberAsyncImagePainter(avatar),
                     contentDescription = "Avatar",
                     modifier = Modifier
                         .size(90.dp)
@@ -77,7 +85,7 @@ fun ProfileScreen(
                     contentScale = ContentScale.Crop
                 )
                 Text(
-                    text = "@leopucci",
+                    text = username,
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
@@ -88,9 +96,9 @@ fun ProfileScreen(
                     modifier = Modifier.padding(vertical = 20.dp),
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    ProfileStat("120", "Seguindo")
-                    ProfileStat("45k", "Seguidores")
-                    ProfileStat("1.2M", "Curtidas")
+                    ProfileStat(following, "Seguindo")
+                    ProfileStat(followers, "Seguidores")
+                    ProfileStat(likes, "Curtidas")
                 }
                 
                 Button(
@@ -108,7 +116,7 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Tab selection (Mock)
+            // Tab selection
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceAround

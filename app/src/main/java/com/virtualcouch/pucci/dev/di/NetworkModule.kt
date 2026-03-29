@@ -135,7 +135,7 @@ class NetworkModule {
     @Provides
     @Singleton
     @Named("cloud_social_api")
-    fun provideCloudSocialApi(@Named("cloud_retrofit") retrofit: Retrofit): SocialApi {
+    fun provideSocialApiCloud(@Named("cloud_retrofit") retrofit: Retrofit): SocialApi {
         return retrofit.create(SocialApi::class.java)
     }
 }

@@ -1,6 +1,7 @@
 package com.virtualcouch.pucci.dev.ui.state
 
 import androidx.media3.common.Player
+import com.virtualcouch.pucci.dev.domain.models.UserProfile
 import com.virtualcouch.pucci.dev.domain.models.VideoData
 
 enum class FeedType {
@@ -11,6 +12,8 @@ data class VideoUiState(
     val player: Player? = null,
     val videos: List<VideoData> = emptyList(),
     val followingVideos: List<VideoData> = emptyList(),
+    val userVideos: List<VideoData> = emptyList(),
+    val userProfile: UserProfile? = null,
     val activeFeed: FeedType = FeedType.FOR_YOU
 ) {
     val currentVideosList: List<VideoData>

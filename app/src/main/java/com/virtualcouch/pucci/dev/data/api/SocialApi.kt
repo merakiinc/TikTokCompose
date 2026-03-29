@@ -21,6 +21,34 @@ data class PostVideoRequest(
     val locale: String
 )
 
+@JsonClass(generateAdapter = true)
+data class UserProfileResponse(
+    val name: String,
+    val username: String,
+    val avatarUrl: String?,
+    val followersCount: String,
+    val followingCount: String,
+    val likesCount: String
+)
+
+@JsonClass(generateAdapter = true)
+data class UserVideoResponse(
+    val id: String,
+    val videoUrl: String,
+    val thumbnailUrl: String,
+    val content: String,
+    val likes: String,
+    val comments: String,
+    val shares: String
+)
+
+@JsonClass(generateAdapter = true)
+data class InteractionRequest(
+    val postId: String,
+    val type: String, // 'VIEW' | 'LIKE' | 'COMMENT' | 'SHARE' | 'SKIP'
+    val weight: Int
+)
+
 interface SocialApi {
     @GET("v1/social/presigned-url")
     suspend fun getPresignedUrl(
@@ -37,5 +65,16 @@ interface SocialApi {
     @POST("v1/social/post-video")
     suspend fun postVideoConfirm(
         @Body request: PostVideoRequest
+    ): Response<Unit>
+
+    @GET("v1/social/profile")
+    suspend fun getUserProfile(): Response<UserProfileResponse>
+
+    @GET("v1/social/my-videos")
+    suspend fun getUserVideos(): Response<List<UserVideoResponse>>
+
+    @POST("v1/social/interaction")
+    suspend fun recordInteraction(
+        @Body request: InteractionRequest
     ): Response<Unit>
 }
