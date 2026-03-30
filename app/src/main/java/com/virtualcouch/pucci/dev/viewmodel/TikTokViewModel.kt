@@ -75,9 +75,8 @@ class TikTokViewModel @Inject constructor(
 
     init {
         checkSession()
+        // Carrega APENAS o feed principal no início
         loadMoreVideos(FeedType.FOR_YOU)
-        loadMoreVideos(FeedType.FOLLOWING)
-        fetchProfileData()
     }
 
     private fun checkSession() {
@@ -93,22 +92,18 @@ class TikTokViewModel @Inject constructor(
                             refreshToken = tokens.refresh.token,
                             refreshTokenExpires = tokens.refresh.expires
                         )
-                        syncCalendar()
-                        fetchProfileData()
                     } else {
                         tokenManager.clearTokens()
                     }
                 } catch (e: Exception) {
                 }
-            } else if (tokenManager.hasAccessToken()) {
-                syncCalendar()
-                fetchProfileData()
             }
             _isCheckingSession.value = false
         }
     }
 
     fun syncCalendar() {
+        Log.d(tag, "Lazy Loading: Syncing Calendar")
         viewModelScope.launch(Dispatchers.IO) {
             calendarRepository.syncEvents()
         }
@@ -116,6 +111,7 @@ class TikTokViewModel @Inject constructor(
 
     fun fetchProfileData() {
         if (!hasValidSession()) return
+        Log.d(tag, "Lazy Loading: Fetching Profile and My Videos")
         
         viewModelScope.launch(Dispatchers.IO) {
             val profileResponse = socialRepository.getUserProfile()
@@ -152,8 +148,7 @@ class TikTokViewModel @Inject constructor(
                 )
                 _effect.emit(LoadingEffect(false))
                 _effect.emit(LoginSuccessEffect)
-                syncCalendar()
-                fetchProfileData()
+                // Não dispara sync aqui, o ciclo de vida da tela cuidará disso
             }
             return
         }
@@ -179,8 +174,6 @@ class TikTokViewModel @Inject constructor(
                         )
                         _effect.emit(LoadingEffect(false))
                         _effect.emit(LoginSuccessEffect)
-                        syncCalendar()
-                        fetchProfileData()
                     } else {
                         _effect.emit(LoadingEffect(false))
                         _effect.emit(MessageEffect("Dados de login incompletos"))
@@ -234,8 +227,6 @@ class TikTokViewModel @Inject constructor(
                     )
                     _effect.emit(LoadingEffect(false))
                     _effect.emit(LoginSuccessEffect)
-                    syncCalendar()
-                    fetchProfileData()
                 } else {
                     _effect.emit(LoadingEffect(false))
                     _effect.emit(MessageEffect("Código de verificação inválido"))
@@ -262,13 +253,12 @@ class TikTokViewModel @Inject constructor(
 
         viewModelScope.launch(Dispatchers.IO) {
             if (feedType == FeedType.FOR_YOU) isLoadingForYou = true else isLoadingFollowing = true
+            Log.d(tag, "Lazy Loading: Loading videos for $feedType")
             
             repository.fetchData(feedType, token).collect { result ->
                 if (feedType == FeedType.FOR_YOU) nextTokenForYou = result.nextToken else nextTokenFollowing = result.nextToken
                 
                 val newVideos = result.videos
-                
-                // INICIA PRÉ-CARREGAMENTO EM BACKGROUND
                 preloadVideos(newVideos.take(10))
 
                 withContext(Dispatchers.Main) {
@@ -291,39 +281,31 @@ class TikTokViewModel @Inject constructor(
         }
     }
 
-    // FUNÇÃO DE PRE-FETCHING AGRESSIVO
     private fun preloadVideos(videos: List<VideoData>) {
         viewModelScope.launch(Dispatchers.IO) {
             videos.forEach { video ->
                 try {
                     val uri = Uri.parse(video.mediaUri)
-                    val dataSpec = DataSpec(uri, 0, 2 * 1024 * 1024) // Baixa os primeiros 2MB
-                    
-                    val dataSource = DefaultHttpDataSource.Factory()
-                        .setAllowCrossProtocolRedirects(true)
-                        .createDataSource()
-                    
-                    val cacheWriter = CacheWriter(
-                        CacheDataSource(App.videoCache, dataSource),
-                        dataSpec,
-                        null,
-                        null
-                    )
-                    
-                    Log.d(tag, "Preloading first 2MB of: ${video.id}")
+                    val dataSpec = DataSpec(uri, 0, 2 * 1024 * 1024)
+                    val dataSource = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true).createDataSource()
+                    val cacheWriter = CacheWriter(CacheDataSource(App.videoCache, dataSource), dataSpec, null, null)
                     cacheWriter.cache() 
-                } catch (e: Exception) {
-                    Log.e(tag, "Preload failed for ${video.id}", e)
-                }
+                } catch (e: Exception) {}
             }
         }
     }
 
     fun switchFeed(feedType: FeedType) {
         if (_state.value.activeFeed == feedType) return
-
+        
         _state.update { it.copy(activeFeed = feedType) }
         
+        // Se o feed de destino estiver vazio, carrega agora (Lazy Loading)
+        val targetList = if (feedType == FeedType.FOR_YOU) _state.value.videos else _state.value.followingVideos
+        if (targetList.isEmpty()) {
+            loadMoreVideos(feedType)
+        }
+
         state.value.player?.let { player ->
             player.setMediaItems(state.value.currentVideosList.toMediaItems())
             player.prepare()
@@ -367,7 +349,6 @@ class TikTokViewModel @Inject constructor(
             }
 
             try {
-                // 1. Get Pre-signed URL
                 val presignedResponse = socialApi.getPresignedUrl()
                 if (!presignedResponse.isSuccessful || presignedResponse.body() == null) {
                     throw Exception("Falha ao obter URL de upload: ${presignedResponse.code()}")
@@ -378,7 +359,6 @@ class TikTokViewModel @Inject constructor(
                     _effect.emit(LoadingEffect(true, "Enviando vídeo para a nuvem..."))
                 }
 
-                // 2. Upload Binary with Retry logic
                 val inputStream = context.contentResolver.openInputStream(uri)
                 val fileBytes = inputStream?.readBytes() ?: throw Exception("Falha ao ler o arquivo de vídeo")
                 inputStream.close()
@@ -396,15 +376,10 @@ class TikTokViewModel @Inject constructor(
                             }
                             delay(2000) 
                         }
-                        
                         val cloudResponse = cloudSocialApi.uploadToCloud(presignedData.uploadUrl, requestBody)
-                        
                         if (cloudResponse.isSuccessful) {
                             uploadSuccess = true
                         } else {
-                            if (cloudResponse.code() == 403 || cloudResponse.code() == 401) {
-                                throw Exception("Erro de permissão no storage (403).")
-                            }
                             retryCount++
                         }
                     } catch (e: java.io.IOException) {
@@ -413,13 +388,8 @@ class TikTokViewModel @Inject constructor(
                     }
                 }
 
-                if (!uploadSuccess) throw Exception("Falha ao subir vídeo após $maxRetries tentativas.")
+                if (!uploadSuccess) throw Exception("Falha ao subir vídeo.")
 
-                withContext(Dispatchers.Main) {
-                    _effect.emit(LoadingEffect(true, "Finalizando publicação..."))
-                }
-
-                // 3. Confirm Post
                 val locale = context.resources.configuration.locales.get(0).toLanguageTag()
                 val confirmResponse = socialApi.postVideoConfirm(
                     PostVideoRequest(
@@ -435,15 +405,13 @@ class TikTokViewModel @Inject constructor(
                     if (confirmResponse.isSuccessful) {
                         _effect.emit(MessageEffect("Vídeo publicado com sucesso!"))
                         fetchProfileData()
-                    } else {
-                        _effect.emit(MessageEffect("Erro ao confirmar publicação: ${confirmResponse.code()}"))
                     }
                     state.value.player?.play()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     _effect.emit(LoadingEffect(false))
-                    _effect.emit(MessageEffect("Erro no processo de upload: ${e.message}"))
+                    _effect.emit(MessageEffect("Erro no upload: ${e.message}"))
                     state.value.player?.play()
                 }
             }
@@ -453,23 +421,9 @@ class TikTokViewModel @Inject constructor(
     fun createPlayer(context: Context) {
         _state.update { state->
             if (state.player == null) {
-                // 1. Configura a fonte de dados com CACHE em disco
-                val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-                    .setAllowCrossProtocolRedirects(true)
-                
-                val cacheDataSourceFactory = CacheDataSource.Factory()
-                    .setCache(App.videoCache)
-                    .setUpstreamDataSourceFactory(httpDataSourceFactory)
-                    .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-
-                // 2. Ajuste Fino de LoadControl (Sugestão Item 5)
-                val loadControl = DefaultLoadControl.Builder()
-                    .setBufferDurationsMs(
-                        1500, // Min buffer para iniciar (Mais rápido que os 2.5s padrão)
-                        5000, // Max buffer (Economiza banda no mobile)
-                        1000, // Buffer para retomar após re-buffer
-                        1500  // Buffer para retomar após pausa
-                    ).build()
+                val httpDataSourceFactory = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
+                val cacheDataSourceFactory = CacheDataSource.Factory().setCache(App.videoCache).setUpstreamDataSourceFactory(httpDataSourceFactory).setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+                val loadControl = DefaultLoadControl.Builder().setBufferDurationsMs(1500, 5000, 1000, 1500).build()
 
                 val player = ExoPlayer.Builder(context)
                     .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
@@ -501,7 +455,6 @@ class TikTokViewModel @Inject constructor(
     fun updateIndex(index: Int) {
         if (currentIndex != index) {
             val videos = state.value.currentVideosList
-            
             state.value.player?.let { player ->
                 if (currentIndex < videos.size) {
                     val playbackTime = player.currentPosition
@@ -510,30 +463,22 @@ class TikTokViewModel @Inject constructor(
                     }
                 }
             }
-            
             currentIndex = index
         }
     }
 
     fun releasePlayer(isChangingConfigurations: Boolean) {
-        if (isChangingConfigurations)
-            return
+        if (isChangingConfigurations) return
         _state.update { state->
             state.player?.release()
             state.copy(player = null)
         }
     }
 
-    fun onPlayerError() {
-    }
+    fun onPlayerError() {}
 
-    fun play() {
-        state.value.player?.play()
-    }
-
-    fun pause() {
-        state.value.player?.pause()
-    }
+    fun play() { state.value.player?.play() }
+    fun pause() { state.value.player?.pause() }
 
     fun onTappedScreen() {
         viewModelScope.launch(Dispatchers.Main) {
@@ -542,8 +487,7 @@ class TikTokViewModel @Inject constructor(
                 val drawable = if (player.isPlaying) {
                     player.pause()
                     com.virtualcouch.pucci.dev.R.drawable.pause
-                }
-                else {
+                } else {
                     player.play()
                     com.virtualcouch.pucci.dev.R.drawable.play
                 }

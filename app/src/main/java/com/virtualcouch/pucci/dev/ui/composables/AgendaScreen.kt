@@ -47,6 +47,11 @@ fun AgendaScreen(
     viewModel: TikTokViewModel = hiltViewModel()
 ) {
     val events by viewModel.calendarEvents.collectAsState(initial = emptyList())
+
+    // Lazy Load: Sincroniza apenas quando abrir a tela
+    LaunchedEffect(Unit) {
+        viewModel.syncCalendar()
+    }
     
     val currentMonth = remember { YearMonth.now() }
     val startMonth = remember { currentMonth.minusMonths(100) }

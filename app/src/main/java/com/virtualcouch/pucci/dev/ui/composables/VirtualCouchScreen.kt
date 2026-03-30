@@ -134,6 +134,9 @@ fun VirtualCouchScreen(
         if (mainPagerState.currentPage < 2) {
             val newFeed = if (mainPagerState.currentPage == 0) FeedType.FOLLOWING else FeedType.FOR_YOU
             viewModel.switchFeed(newFeed)
+        } else if (mainPagerState.currentPage == 2) {
+            // Lazy Load: Só carrega perfil e "meus vídeos" se o usuário entrar na aba
+            viewModel.fetchProfileData()
         }
     }
 
