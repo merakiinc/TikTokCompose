@@ -89,6 +89,21 @@ fun VirtualCouchScreen(
     // Estado para evitar play durante transição de abas
     var isTransitioningToProfile by remember { mutableStateOf(false) }
 
+    // CICLO DE VIDA GLOBAL DO PLAYER (Evita recriar a cada swipe)
+    ComposableLifecycle { _, event ->
+        when (event) {
+            Lifecycle.Event.ON_START -> {
+                Log.d("VirtualCouchScreen", "Lifecycle: ON_START -> Creating Player")
+                viewModel.createPlayer(context)
+            }
+            Lifecycle.Event.ON_STOP -> {
+                Log.d("VirtualCouchScreen", "Lifecycle: ON_STOP -> Releasing Player")
+                viewModel.releasePlayer(context.findActivity()?.isChangingConfigurations == true)
+            }
+            else -> {}
+        }
+    }
+
     val permissionState = rememberMultiplePermissionsState(
         permissions = listOf(
             Manifest.permission.CAMERA,
@@ -425,6 +440,7 @@ fun VideoPager(
     VerticalPager(
         state = pagerState,
         horizontalAlignment = Alignment.CenterHorizontally,
+        beyondViewportPageCount = 1, // Pré-carrega o próximo vídeo para transição instantânea
         key = { index ->
             if (index < videos.size) videos[index].id else index
         }
@@ -454,24 +470,23 @@ fun VideoCard(
 ) {
     val context = LocalContext.current
     var showPlayer by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
     
     val playerView = player?.let { rememberPlayerView(it) }
 
+    // Agora o VideoCard só lida com Play/Pause baseado no ciclo de vida da página
     ComposableLifecycle { _, event ->
         when (event) {
-            Lifecycle.Event.ON_START -> viewModel.createPlayer(context)
-            Lifecycle.Event.ON_STOP -> {
-                showPlayer = false 
-                viewModel.releasePlayer(context.findActivity()?.isChangingConfigurations == true)
-            }
             Lifecycle.Event.ON_RESUME -> {
-                scope.launch {
-                    delay(200) 
-                    viewModel.play()
-                }
+                Log.d("VideoCard", "ON_RESUME: Requesting Play for ${video.id}")
+                viewModel.play()
             }
-            Lifecycle.Event.ON_PAUSE -> viewModel.pause()
+            Lifecycle.Event.ON_PAUSE -> {
+                Log.d("VideoCard", "ON_PAUSE: Requesting Pause")
+                viewModel.pause()
+            }
+            Lifecycle.Event.ON_STOP -> {
+                showPlayer = false
+            }
             else -> {}
         }
     }
@@ -486,7 +501,7 @@ fun VideoCard(
             ) { event->
                 when (event) {
                     Player.EVENT_RENDERED_FIRST_FRAME -> {
-                        Log.d("VideoCard", "First frame rendered for ${video.id}")
+                        Log.d("VideoCard", "PERF: First frame rendered for ${video.id}")
                         showPlayer = true
                     }
                     Player.EVENT_PLAYER_ERROR -> {
@@ -494,8 +509,6 @@ fun VideoCard(
                     }
                 }
                 
-                // Backup: se o player estiver READY mas o evento de frame não disparou,
-                // forçamos a exibição após um pequeno delay
                 if (player.playbackState == Player.STATE_READY) {
                     showPlayer = true
                 }

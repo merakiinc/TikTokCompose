@@ -24,9 +24,10 @@ data class VideoUiState(
             if (player.currentMediaItemIndex == position && player.isPlaying)
                 return
 
+            // Move para o vídeo sem resetar o player
             player.seekToDefaultPosition(position)
             player.playWhenReady = true
-            // Não chamamos prepare() aqui para não resetar o buffer dos próximos vídeos
+            // REMOVIDO: player.prepare() -> Isso causava a lentidão ao descartar o buffer
         }
     }
 }

@@ -5,8 +5,15 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.CacheWriter
+import androidx.media3.datasource.DataSpec
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import com.virtualcouch.pucci.dev.App
 import com.virtualcouch.pucci.dev.data.api.*
 import com.virtualcouch.pucci.dev.data.local.entities.EventEntity
 import com.virtualcouch.pucci.dev.data.repository.CalendarRepository
@@ -32,8 +39,10 @@ import kotlinx.coroutines.delay
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import android.net.Uri
 
 @HiltViewModel
+@UnstableApi
 class TikTokViewModel @Inject constructor(
     @Named("reddit_data") private val repository: VideoDataRepository,
     private val authApi: AuthApi,
@@ -253,21 +262,21 @@ class TikTokViewModel @Inject constructor(
 
         viewModelScope.launch(Dispatchers.IO) {
             if (feedType == FeedType.FOR_YOU) isLoadingForYou = true else isLoadingFollowing = true
-            Log.d(tag, "Loading more videos for $feedType")
             
             repository.fetchData(feedType, token).collect { result ->
                 if (feedType == FeedType.FOR_YOU) nextTokenForYou = result.nextToken else nextTokenFollowing = result.nextToken
                 
                 val newVideos = result.videos
-                Log.d(tag, "Received ${newVideos.size} videos for $feedType")
                 
+                // INICIA PRÉ-CARREGAMENTO EM BACKGROUND
+                preloadVideos(newVideos.take(10))
+
                 withContext(Dispatchers.Main) {
                     _state.update { currentState ->
                         val updatedForYou = if (feedType == FeedType.FOR_YOU) currentState.videos + newVideos else currentState.videos
                         val updatedFollowing = if (feedType == FeedType.FOLLOWING) currentState.followingVideos + newVideos else currentState.followingVideos
                         
                         if (currentState.activeFeed == feedType) {
-                            Log.d(tag, "Adding ${newVideos.size} items to player")
                             currentState.player?.addMediaItems(newVideos.toMediaItems())
                         }
                         
@@ -282,16 +291,41 @@ class TikTokViewModel @Inject constructor(
         }
     }
 
+    // FUNÇÃO DE PRE-FETCHING AGRESSIVO
+    private fun preloadVideos(videos: List<VideoData>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            videos.forEach { video ->
+                try {
+                    val uri = Uri.parse(video.mediaUri)
+                    val dataSpec = DataSpec(uri, 0, 2 * 1024 * 1024) // Baixa os primeiros 2MB
+                    
+                    val dataSource = DefaultHttpDataSource.Factory()
+                        .setAllowCrossProtocolRedirects(true)
+                        .createDataSource()
+                    
+                    val cacheWriter = CacheWriter(
+                        CacheDataSource(App.videoCache, dataSource),
+                        dataSpec,
+                        null,
+                        null
+                    )
+                    
+                    Log.d(tag, "Preloading first 2MB of: ${video.id}")
+                    cacheWriter.cache() 
+                } catch (e: Exception) {
+                    Log.e(tag, "Preload failed for ${video.id}", e)
+                }
+            }
+        }
+    }
+
     fun switchFeed(feedType: FeedType) {
         if (_state.value.activeFeed == feedType) return
-        Log.d(tag, "Switching feed to $feedType")
 
         _state.update { it.copy(activeFeed = feedType) }
         
         state.value.player?.let { player ->
-            val list = state.value.currentVideosList
-            Log.d(tag, "Resetting player with ${list.size} items from $feedType")
-            player.setMediaItems(list.toMediaItems())
+            player.setMediaItems(state.value.currentVideosList.toMediaItems())
             player.prepare()
         }
     }
@@ -360,23 +394,20 @@ class TikTokViewModel @Inject constructor(
                             withContext(Dispatchers.Main) {
                                 _effect.emit(LoadingEffect(true, "Falha na conexão. Tentativa $retryCount de $maxRetries..."))
                             }
-                            delay(2000) // Aguarda 2 segundos antes de tentar de novo
+                            delay(2000) 
                         }
                         
-                        Log.d(tag, "Uploading binary to R2... Attempt ${retryCount + 1}")
                         val cloudResponse = cloudSocialApi.uploadToCloud(presignedData.uploadUrl, requestBody)
                         
                         if (cloudResponse.isSuccessful) {
                             uploadSuccess = true
                         } else {
-                            Log.e(tag, "Upload binary failed: ${cloudResponse.code()}")
                             if (cloudResponse.code() == 403 || cloudResponse.code() == 401) {
                                 throw Exception("Erro de permissão no storage (403).")
                             }
                             retryCount++
                         }
                     } catch (e: java.io.IOException) {
-                        Log.e(tag, "Network error during upload: ${e.message}")
                         retryCount++
                         if (retryCount > maxRetries) throw e
                     }
@@ -422,46 +453,40 @@ class TikTokViewModel @Inject constructor(
     fun createPlayer(context: Context) {
         _state.update { state->
             if (state.player == null) {
-                Log.d(tag, "Creating new player instance with aggressive buffering")
+                // 1. Configura a fonte de dados com CACHE em disco
+                val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+                    .setAllowCrossProtocolRedirects(true)
                 
+                val cacheDataSourceFactory = CacheDataSource.Factory()
+                    .setCache(App.videoCache)
+                    .setUpstreamDataSourceFactory(httpDataSourceFactory)
+                    .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+
+                // 2. Ajuste Fino de LoadControl (Sugestão Item 5)
                 val loadControl = DefaultLoadControl.Builder()
-                    .setBufferDurationsMs(15000, 50000, 1000, 1500)
-                    .build()
+                    .setBufferDurationsMs(
+                        1500, // Min buffer para iniciar (Mais rápido que os 2.5s padrão)
+                        5000, // Max buffer (Economiza banda no mobile)
+                        1000, // Buffer para retomar após re-buffer
+                        1500  // Buffer para retomar após pausa
+                    ).build()
 
                 val player = ExoPlayer.Builder(context)
+                    .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
                     .setLoadControl(loadControl)
                     .build().apply {
                         repeatMode = Player.REPEAT_MODE_ONE
-                        val mediaItems = state.currentVideosList.toMediaItems()
-                        Log.d(tag, "Initializing player with ${mediaItems.size} items at index $currentIndex")
-                        setMediaItems(mediaItems)
+                        setMediaItems(state.currentVideosList.toMediaItems())
                         seekToDefaultPosition(currentIndex)
                         prepare()
                         
                         addListener(object : Player.Listener {
                             override fun onPlaybackStateChanged(playbackState: Int) {
-                                val stateName = when(playbackState) {
-                                    Player.STATE_IDLE -> "IDLE"
-                                    Player.STATE_BUFFERING -> "BUFFERING"
-                                    Player.STATE_READY -> "READY"
-                                    Player.STATE_ENDED -> "ENDED"
-                                    else -> "UNKNOWN"
-                                }
-                                Log.d(tag, "Player State Changed: $stateName")
-
                                 if (playbackState == Player.STATE_ENDED) {
                                     val videos = _state.value.currentVideosList
                                     if (currentIndex < videos.size) {
                                         onVideoFinished(videos[currentIndex].id)
                                     }
-                                }
-                            }
-                            
-                            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                                Log.e(tag, "ExoPlayer Error: ${error.message}, Code: ${error.errorCode}")
-                                if (error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_UNSPECIFIED) {
-                                    Log.w(tag, "Generic IO Error. Attempting to re-prepare...")
-                                    prepare()
                                 }
                             }
                         })
@@ -476,7 +501,6 @@ class TikTokViewModel @Inject constructor(
     fun updateIndex(index: Int) {
         if (currentIndex != index) {
             val videos = state.value.currentVideosList
-            Log.d(tag, "Index changed: $currentIndex -> $index")
             
             state.value.player?.let { player ->
                 if (currentIndex < videos.size) {
@@ -495,7 +519,6 @@ class TikTokViewModel @Inject constructor(
         if (isChangingConfigurations)
             return
         _state.update { state->
-            Log.d(tag, "Releasing player")
             state.player?.release()
             state.copy(player = null)
         }
@@ -505,12 +528,10 @@ class TikTokViewModel @Inject constructor(
     }
 
     fun play() {
-        Log.d(tag, "Play requested")
         state.value.player?.play()
     }
 
     fun pause() {
-        Log.d(tag, "Pause requested")
         state.value.player?.pause()
     }
 
