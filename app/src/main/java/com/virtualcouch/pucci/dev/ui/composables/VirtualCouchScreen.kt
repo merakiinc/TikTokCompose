@@ -12,6 +12,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.VerticalPager
@@ -19,6 +22,8 @@ import androidx.compose.foundation.pager.rememberPagerState
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
@@ -52,6 +57,7 @@ import androidx.media3.common.Player
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.rememberAsyncImagePainter
+import com.virtualcouch.pucci.dev.domain.models.UserProfile
 import com.virtualcouch.pucci.dev.domain.models.VideoData
 import com.virtualcouch.pucci.dev.ui.effect.*
 import com.virtualcouch.pucci.dev.ui.state.FeedType
@@ -60,7 +66,6 @@ import com.virtualcouch.pucci.dev.util.findActivity
 import com.virtualcouch.pucci.dev.util.showToast
 import com.virtualcouch.pucci.dev.viewmodel.TikTokViewModel
 import java.io.File
-import android.net.Uri
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -86,37 +91,24 @@ fun VirtualCouchScreen(
     var videoDescription by remember { mutableStateOf("") }
     var pendingVideoUri by remember { mutableStateOf<Uri?>(null) }
 
-    // Estado para evitar play durante transição de abas
     var isTransitioningToProfile by remember { mutableStateOf(false) }
 
-    // CICLO DE VIDA GLOBAL DO PLAYER (Evita recriar a cada swipe)
     ComposableLifecycle { _, event ->
         when (event) {
-            Lifecycle.Event.ON_START -> {
-                Log.d("VirtualCouchScreen", "Lifecycle: ON_START -> Creating Player")
-                viewModel.createPlayer(context)
-            }
-            Lifecycle.Event.ON_STOP -> {
-                Log.d("VirtualCouchScreen", "Lifecycle: ON_STOP -> Releasing Player")
-                viewModel.releasePlayer(context.findActivity()?.isChangingConfigurations == true)
-            }
+            Lifecycle.Event.ON_START -> viewModel.createPlayer(context)
+            Lifecycle.Event.ON_STOP -> viewModel.releasePlayer(context.findActivity()?.isChangingConfigurations == true)
             else -> {}
         }
     }
 
     val permissionState = rememberMultiplePermissionsState(
-        permissions = listOf(
-            Manifest.permission.CAMERA,
-            Manifest.permission.RECORD_AUDIO
-        )
+        permissions = listOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
     )
     
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CaptureVideo()
     ) { success ->
-        if (success && pendingVideoUri != null) {
-            showDescriptionDialog = true
-        }
+        if (success && pendingVideoUri != null) showDescriptionDialog = true
     }
 
     val mainPagerState = rememberPagerState(initialPage = 1) { 3 } 
@@ -135,8 +127,13 @@ fun VirtualCouchScreen(
             val newFeed = if (mainPagerState.currentPage == 0) FeedType.FOLLOWING else FeedType.FOR_YOU
             viewModel.switchFeed(newFeed)
         } else if (mainPagerState.currentPage == 2) {
-            // Lazy Load: Só carrega perfil e "meus vídeos" se o usuário entrar na aba
-            viewModel.fetchProfileData()
+            // Lazy Load: Busca o perfil do autor do vídeo atual ao deslizar para a esquerda
+            val currentVideo = state.currentVideosList.getOrNull(state.player?.currentMediaItemIndex ?: -1)
+            currentVideo?.let { video ->
+                // Aqui você precisaria do authorId vindo do backend. Por enquanto usamos o nome ou ID do post.
+                // Idealmente o VideoData teria um campo authorId.
+                viewModel.fetchAuthorProfile(video.id) 
+            }
         }
     }
 
@@ -144,57 +141,26 @@ fun VirtualCouchScreen(
         sheetState = sheetState,
         sheetShape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
         sheetBackgroundColor = Color(0xFF1A1A1A),
-        sheetContent = {
-            CommentsSheetContent()
-        }
+        sheetContent = { CommentsSheetContent() }
     ) {
         Scaffold(
             modifier = modifier.fillMaxSize(),
             backgroundColor = Color.Black,
             bottomBar = {
                 VirtualCouchBottomNavigation(
-                    currentRoute = if (currentRoute == "main" && mainPagerState.currentPage == 2) "profile" else currentRoute,
+                    currentRoute = currentRoute,
                     onNavigate = { route ->
-                        when (route) {
-                            "profile" -> {
-                                if (currentRoute != "main") {
-                                    isTransitioningToProfile = true
-                                    onNavigate("main")
-                                }
-                                scope.launch {
-                                    mainPagerState.scrollToPage(2)
-                                    isTransitioningToProfile = false
-                                }
-                            }
-                            "main" -> {
-                                onNavigate("main")
-                                scope.launch {
-                                    mainPagerState.animateScrollToPage(1)
-                                }
-                            }
-                            "agenda" -> {
-                                onNavigate("agenda")
-                            }
+                        if (route == "profile") {
+                            viewModel.fetchProfileData()
                         }
+                        onNavigate(route)
                     },
                     onAddClick = {
                         if (permissionState.allPermissionsGranted) {
-                            try {
-                                val videoFile = File(context.cacheDir, "captured_video_${System.currentTimeMillis()}.mp4")
-                                videoFile.parentFile?.let {
-                                    if (!it.exists()) it.mkdirs()
-                                }
-                                
-                                val uri = FileProvider.getUriForFile(
-                                    context,
-                                    "${context.packageName}.fileprovider",
-                                    videoFile
-                                )
-                                pendingVideoUri = uri
-                                cameraLauncher.launch(uri)
-                            } catch (e: Exception) {
-                                showToast(context, "Erro ao preparar câmera: ${e.message}")
-                            }
+                            val videoFile = File(context.cacheDir, "cap_${System.currentTimeMillis()}.mp4")
+                            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", videoFile)
+                            pendingVideoUri = uri
+                            cameraLauncher.launch(uri)
                         } else {
                             permissionState.launchMultiplePermissionRequest()
                         }
@@ -202,43 +168,32 @@ fun VirtualCouchScreen(
                 )
             }
         ) { paddingValues ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                if (currentRoute == "main") {
-                    HorizontalPager(
-                        state = mainPagerState,
-                        modifier = Modifier.fillMaxSize(),
-                        userScrollEnabled = true
-                    ) { page ->
-                        when (page) {
-                            0 -> VideoPager(state = state, feedType = FeedType.FOLLOWING, viewModel = viewModel, onCommentsClick = { scope.launch { sheetState.show() } })
-                            1 -> VideoPager(state = state, feedType = FeedType.FOR_YOU, viewModel = viewModel, onCommentsClick = { scope.launch { sheetState.show() } })
-                            2 -> ProfileScreen(
-                                profile = state.userProfile,
-                                videos = state.userVideos,
-                                onLogout = onLogout
-                            )
-                        }                    }
-
-                    if (mainPagerState.currentPage < 2) {
-                        VirtualCouchTopBar(
-                            modifier = Modifier
-                                .align(Alignment.TopCenter)
-                                .statusBarsPadding(),
-                            activeFeed = if (mainPagerState.currentPage == 0) FeedType.FOLLOWING else FeedType.FOR_YOU,
-                            onFeedClick = { feed ->
-                                val targetPage = if (feed == FeedType.FOLLOWING) 0 else 1
-                                scope.launch {
-                                    mainPagerState.animateScrollToPage(targetPage)
-                                }
+            Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+                when (currentRoute) {
+                    "main" -> {
+                        HorizontalPager(
+                            state = mainPagerState,
+                            modifier = Modifier.fillMaxSize()
+                        ) { page ->
+                            when (page) {
+                                0 -> VideoPager(state = state, feedType = FeedType.FOLLOWING, viewModel = viewModel, onCommentsClick = { scope.launch { sheetState.show() } })
+                                1 -> VideoPager(state = state, feedType = FeedType.FOR_YOU, viewModel = viewModel, onCommentsClick = { scope.launch { sheetState.show() } })
+                                2 -> AuthorProfileScreen(profile = state.authorProfile, videos = state.authorVideos)
                             }
-                        )
+                        }
+
+                        if (mainPagerState.currentPage < 2) {
+                            VirtualCouchTopBar(
+                                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding(),
+                                activeFeed = if (mainPagerState.currentPage == 0) FeedType.FOLLOWING else FeedType.FOR_YOU,
+                                onFeedClick = { feed ->
+                                    scope.launch { mainPagerState.animateScrollToPage(if (feed == FeedType.FOLLOWING) 0 else 1) }
+                                }
+                            )
+                        }
                     }
-                } else if (currentRoute == "agenda") {
-                    AgendaScreen()
+                    "agenda" -> AgendaScreen()
+                    "profile" -> ProfileScreen(profile = state.userProfile, videos = state.userVideos, onLogout = onLogout)
                 }
 
                 if (showDescriptionDialog) {
@@ -246,95 +201,139 @@ fun VirtualCouchScreen(
                         onDismissRequest = { showDescriptionDialog = false },
                         title = { Text("Publicar vídeo", color = Color.White, fontWeight = FontWeight.Bold) },
                         text = {
-                            Column {
-                                Text("Dê uma legenda ao seu vídeo:", color = Color.LightGray, fontSize = 14.sp)
-                                Spacer(modifier = Modifier.height(8.dp))
-                                OutlinedTextField(
-                                    value = videoDescription,
-                                    onValueChange = { videoDescription = it },
-                                    placeholder = { Text("O que está acontecendo?", color = Color.Gray) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                                        textColor = Color.White,
-                                        focusedBorderColor = Color(0xFF1D4EEE),
-                                        unfocusedBorderColor = Color.DarkGray
-                                    )
-                                )
-                            }
+                            OutlinedTextField(
+                                value = videoDescription,
+                                onValueChange = { videoDescription = it },
+                                placeholder = { Text("Legenda...", color = Color.Gray) },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = TextFieldDefaults.outlinedTextFieldColors(textColor = Color.White, focusedBorderColor = Color(0xFF1D4EEE))
+                            )
                         },
                         confirmButton = {
-                            Button(
-                                onClick = {
-                                    showDescriptionDialog = false
-                                    viewModel.uploadCapturedVideo(pendingVideoUri, videoDescription)
-                                    videoDescription = "" 
-                                },
-                                colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF1D4EEE))
-                            ) {
-                                Text("Publicar", color = Color.White)
-                            }
+                            Button(onClick = {
+                                showDescriptionDialog = false
+                                viewModel.uploadCapturedVideo(pendingVideoUri, videoDescription)
+                                videoDescription = "" 
+                            }) { Text("Publicar") }
                         },
-                        dismissButton = {
-                            TextButton(onClick = { showDescriptionDialog = false }) {
-                                Text("Cancelar", color = Color.Gray)
-                            }
-                        },
-                        backgroundColor = Color(0xFF1A1A1A),
-                        shape = RoundedCornerShape(12.dp)
+                        backgroundColor = Color(0xFF1A1A1A)
                     )
                 }
-
-                if (isLoading) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.6f))
-                            .clickable(enabled = false) {},
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator(color = Color.White)
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(text = loadingMessage, color = Color.White, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    LaunchedEffect(key1 = true) {
-        viewModel.effect.collect { effect ->
-            when (effect) {
-                is LoadingEffect -> {
-                    isLoading = effect.isLoading
-                    loadingMessage = effect.message
-                }
-                is MessageEffect -> {
-                    showToast(context, effect.message)
-                }
-                else -> {}
             }
         }
     }
 }
 
 @Composable
+fun AuthorProfileScreen(
+    profile: UserProfile?,
+    videos: List<VideoData>
+) {
+    if (profile == null) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = Color.White)
+        }
+        return
+    }
+
+    val context = LocalContext.current
+
+    Column(modifier = Modifier.fillMaxSize().background(Color.Black).padding(top = 16.dp)) {
+        // Header
+        Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Image(
+                painter = rememberAsyncImagePainter(profile.avatarUrl),
+                contentDescription = null,
+                modifier = Modifier.size(90.dp).clip(CircleShape).border(2.dp, Color.DarkGray, CircleShape),
+                contentScale = ContentScale.Crop
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(text = profile.username ?: "Psicólogo", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Stats
+            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                ProfileStatItem(profile.followingCount, "Seguindo")
+                ProfileStatItem(profile.followersCount, "Seguidores")
+                ProfileStatItem(profile.likesCount, "Curtidas")
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Bio
+            profile.bio?.let {
+                Text(text = it, color = Color.White, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp), fontSize = 14.sp)
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Links
+            profile.links?.forEach { link ->
+                Text(
+                    text = link.label,
+                    color = Color(0xFF1D4EEE),
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link.url)))
+                    }.padding(4.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Button(
+                onClick = { /* Follow Logic */ },
+                colors = ButtonDefaults.buttonColors(backgroundColor = if (profile.isFollowing) Color.DarkGray else Color(0xFF1D4EEE)),
+                shape = RoundedCornerShape(4.dp),
+                modifier = Modifier.width(160.dp).height(36.dp)
+            ) {
+                Text(text = if (profile.isFollowing) "Seguindo" else "Seguir", color = Color.White)
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        // Videos Grid
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(3),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(1.dp),
+            horizontalArrangement = Arrangement.spacedBy(1.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            items(videos) { video ->
+                Box(modifier = Modifier.aspectRatio(3f/4f).background(Color.DarkGray)) {
+                    Image(
+                        painter = rememberAsyncImagePainter(video.previewImageUri),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                    Text(
+                        text = "❤️ ${video.likes}",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        modifier = Modifier.align(Alignment.BottomStart).padding(4.dp),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ProfileStatItem(count: String, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(text = count, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Text(text = label, color = Color.Gray, fontSize = 12.sp)
+    }
+}
+
+@Composable
 fun CommentsSheetContent() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(500.dp)
-            .padding(16.dp)
-    ) {
-        Text(
-            text = "Comentários",
-            color = Color.White,
-            fontWeight = FontWeight.Bold,
-            fontSize = 16.sp,
-            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-            textAlign = TextAlign.Center
-        )
+    Column(modifier = Modifier.fillMaxWidth().height(500.dp).padding(16.dp)) {
+        Text("Comentários", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
         LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             items(10) { index ->
                 Row(verticalAlignment = Alignment.Top) {
@@ -342,7 +341,7 @@ fun CommentsSheetContent() {
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text("Usuário $index", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text("Este vídeo é muito bom! Me ajudou bastante.", color = Color.White, fontSize = 14.sp)
+                        Text("Ótimo conteúdo!", color = Color.White, fontSize = 14.sp)
                     }
                 }
             }
@@ -358,58 +357,23 @@ fun VirtualCouchTopBar(
 ) {
     Box(modifier = modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 16.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            FeedTabText(
-                text = "Seguindo",
-                isActive = activeFeed == FeedType.FOLLOWING,
-                onClick = { onFeedClick(FeedType.FOLLOWING) }
-            )
+            FeedTabText(text = "Seguindo", isActive = activeFeed == FeedType.FOLLOWING, onClick = { onFeedClick(FeedType.FOLLOWING) })
             Spacer(modifier = Modifier.width(20.dp))
-            FeedTabText(
-                text = "For You",
-                isActive = activeFeed == FeedType.FOR_YOU,
-                onClick = { onFeedClick(FeedType.FOR_YOU) }
-            )
+            FeedTabText(text = "For You", isActive = activeFeed == FeedType.FOR_YOU, onClick = { onFeedClick(FeedType.FOR_YOU) })
         }
     }
 }
 
 @Composable
-fun FeedTabText(
-    text: String,
-    isActive: Boolean,
-    onClick: () -> Unit
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable(
-            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-            indication = null,
-            onClick = onClick
-        )
-    ) {
-        Text(
-            text = text,
-            color = if (isActive) Color.White else Color.White.copy(alpha = 0.6f),
-            fontSize = 17.sp,
-            fontWeight = FontWeight.Bold
-        )
+fun FeedTabText(text: String, isActive: Boolean, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, onClick = onClick)) {
+        Text(text = text, color = if (isActive) Color.White else Color.White.copy(alpha = 0.6f), fontSize = 17.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(4.dp))
-        if (isActive) {
-            Box(
-                modifier = Modifier
-                    .width(30.dp)
-                    .height(2.dp)
-                    .background(Color.White)
-            )
-        } else {
-            Spacer(modifier = Modifier.height(2.dp))
-        }
+        if (isActive) Box(modifier = Modifier.width(30.dp).height(2.dp).background(Color.White))
     }
 }
 
@@ -425,41 +389,25 @@ fun VideoPager(
     val pagerState = rememberPagerState { videos.size }
 
     LaunchedEffect(pagerState.currentPage) {
-        if (pagerState.currentPage >= videos.size - 5 && videos.isNotEmpty()) {
-            viewModel.loadMoreVideos(feedType)
-        }
+        if (pagerState.currentPage >= videos.size - 5 && videos.isNotEmpty()) viewModel.loadMoreVideos(feedType)
     }
 
-    LaunchedEffect(pagerState.currentPage) {
-        viewModel.updateIndex(pagerState.currentPage)
-    }
+    LaunchedEffect(pagerState.currentPage) { viewModel.updateIndex(pagerState.currentPage) }
 
     LaunchedEffect(state.player, pagerState.currentPage, state.activeFeed) {
-        if (state.activeFeed == feedType) {
-            state.playMediaAt(pagerState.currentPage)
-        }
+        if (state.activeFeed == feedType) state.playMediaAt(pagerState.currentPage)
     }
 
     VerticalPager(
         state = pagerState,
         horizontalAlignment = Alignment.CenterHorizontally,
-        beyondViewportPageCount = 1, // Pré-carrega o próximo vídeo para transição instantânea
-        key = { index ->
-            if (index < videos.size) videos[index].id else index
-        }
+        beyondViewportPageCount = 1,
+        key = { index -> if (index < videos.size) videos[index].id else index }
     ) { index ->
         if (index == pagerState.currentPage && state.activeFeed == feedType) {
-            VideoCard(
-                player = state.player,
-                video = videos[index],
-                viewModel = viewModel,
-                onCommentsClick = onCommentsClick
-            )
-        }
-        else {
-            Box(modifier = Modifier.fillMaxSize()) {
-                VideoThumbnail(video = videos[index])
-            }
+            VideoCard(player = state.player, video = videos[index], viewModel = viewModel, onCommentsClick = onCommentsClick)
+        } else {
+            Box(modifier = Modifier.fillMaxSize()) { VideoThumbnail(video = videos[index]) }
         }
     }
 }
@@ -473,80 +421,38 @@ fun VideoCard(
 ) {
     val context = LocalContext.current
     var showPlayer by remember { mutableStateOf(false) }
-    
     val playerView = player?.let { rememberPlayerView(it) }
 
-    // Agora o VideoCard só lida com Play/Pause baseado no ciclo de vida da página
     ComposableLifecycle { _, event ->
         when (event) {
-            Lifecycle.Event.ON_RESUME -> {
-                Log.d("VideoCard", "ON_RESUME: Requesting Play for ${video.id}")
-                viewModel.play()
-            }
-            Lifecycle.Event.ON_PAUSE -> {
-                Log.d("VideoCard", "ON_PAUSE: Requesting Pause")
-                viewModel.pause()
-            }
-            Lifecycle.Event.ON_STOP -> {
-                showPlayer = false
-            }
+            Lifecycle.Event.ON_RESUME -> viewModel.play()
+            Lifecycle.Event.ON_PAUSE -> viewModel.pause()
+            Lifecycle.Event.ON_STOP -> showPlayer = false
             else -> {}
         }
     }
 
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         if (player != null && playerView != null) {
-            PlayerListener(
-                player = player
-            ) { event->
-                when (event) {
-                    Player.EVENT_RENDERED_FIRST_FRAME -> {
-                        Log.d("VideoCard", "PERF: First frame rendered for ${video.id}")
-                        showPlayer = true
-                    }
-                    Player.EVENT_PLAYER_ERROR -> {
-                        viewModel.onPlayerError()
-                    }
-                }
-                
-                if (player.playbackState == Player.STATE_READY) {
-                    showPlayer = true
-                }
+            PlayerListener(player = player) { event->
+                if (event == Player.EVENT_RENDERED_FIRST_FRAME) showPlayer = true
+                if (player.playbackState == Player.STATE_READY) showPlayer = true
             }
-            Player(
-                playerView = playerView,
-                viewModel = viewModel,
-                aspectRatio = video.aspectRatio ?: 1f,
-                postId = video.id
-            )
+            Player(playerView = playerView, viewModel = viewModel, aspectRatio = video.aspectRatio ?: 1f, postId = video.id)
         }
         
-        if (!showPlayer) {
-            VideoThumbnail(video = video)
-        }
+        if (!showPlayer) VideoThumbnail(video = video)
 
         Box(modifier = Modifier.fillMaxSize()) {
             VideoSideBar(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd) 
-                    .padding(end = 8.dp, bottom = 40.dp), 
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 40.dp), 
                 video = video,
-                onCommentsClick = {
-                    viewModel.commentClicked(video.id)
-                    onCommentsClick()
-                },
+                onCommentsClick = { viewModel.commentClicked(video.id); onCommentsClick() },
                 onLikeClick = { viewModel.likeVideo(video.id) },
                 onShareClick = { viewModel.shareVideo(video.id) }
             )
             
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 12.dp, bottom = 40.dp) 
-            ) {
+            Column(modifier = Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = 40.dp)) {
                 Text("@${video.authorName}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(video.description, color = Color.White, fontSize = 14.sp)
@@ -563,35 +469,19 @@ fun VideoSideBar(
     onLikeClick: () -> Unit,
     onShareClick: () -> Unit
 ) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(20.dp)
-    ) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Box(contentAlignment = Alignment.BottomCenter) {
             Image(
                 painter = rememberAsyncImagePainter(video.authorAvatar),
                 contentDescription = null,
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .border(1.dp, Color.White, CircleShape),
+                modifier = Modifier.size(48.dp).clip(CircleShape).border(1.dp, Color.White, CircleShape),
                 contentScale = ContentScale.Crop
             )
-            Box(
-                modifier = Modifier
-                    .offset(y = 10.dp)
-                    .size(20.dp)
-                    .clip(CircleShape)
-                    .background(Color.Red),
-                contentAlignment = Alignment.Center
-            ) {
+            Box(modifier = Modifier.offset(y = 10.dp).size(20.dp).clip(CircleShape).background(Color.Red), contentAlignment = Alignment.Center) {
                 Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
             }
         }
-        
         Spacer(modifier = Modifier.height(8.dp))
-
         SideBarIcon(icon = Icons.Default.Favorite, label = video.likes, tint = if (video.isLiked) Color.Red else Color.White, onClick = onLikeClick)
         SideBarIcon(icon = Icons.AutoMirrored.Filled.Comment, label = video.comments, onClick = onCommentsClick)
         SideBarIcon(icon = Icons.Default.Share, label = video.shares, onClick = onShareClick)
@@ -599,12 +489,7 @@ fun VideoSideBar(
 }
 
 @Composable
-fun SideBarIcon(
-    icon: ImageVector,
-    label: String,
-    tint: Color = Color.White,
-    onClick: () -> Unit = {}
-) {
+fun SideBarIcon(icon: ImageVector, label: String, tint: Color = Color.White, onClick: () -> Unit = {}) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { onClick() }) {
         Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(35.dp))
         Text(text = label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -612,28 +497,11 @@ fun SideBarIcon(
 }
 
 @Composable
-fun BoxScope.VideoThumbnail(
-    video: VideoData
-) {
+fun BoxScope.VideoThumbnail(video: VideoData) {
     if (!video.previewImageUri.isNullOrBlank()) {
-        Image(
-            painter = rememberAsyncImagePainter(
-                model = video.previewImageUri
-            ),
-            contentDescription = "Preview",
-            modifier = Modifier
-                .aspectRatio(video.aspectRatio ?: 1f)
-                .align(Alignment.Center)
-                .fillMaxSize()
-        )
+        Image(painter = rememberAsyncImagePainter(model = video.previewImageUri), contentDescription = "Preview", modifier = Modifier.aspectRatio(video.aspectRatio ?: 1f).align(Alignment.Center).fillMaxSize())
     } else {
-        // Fallback para quando não há thumbnail
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.DarkGray.copy(alpha = 0.3f)),
-            contentAlignment = Alignment.Center
-        ) {
+        Box(modifier = Modifier.fillMaxSize().background(Color.DarkGray.copy(alpha = 0.3f)), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(30.dp))
         }
     }
@@ -641,104 +509,35 @@ fun BoxScope.VideoThumbnail(
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
-fun Player(
-    playerView: PlayerView,
-    viewModel: TikTokViewModel,
-    modifier: Modifier = Modifier,
-    aspectRatio: Float,
-    postId: String
-) {
-    var animatedIconDrawable by remember {
-        mutableStateOf(0)
-    }
-    val iconVisibleState = remember {
-        MutableTransitionState(false)
-    }
-    var animationJob: Job? by remember {
-        mutableStateOf(null)
-    }
-    
+fun Player(playerView: PlayerView, viewModel: TikTokViewModel, modifier: Modifier = Modifier, aspectRatio: Float, postId: String) {
+    var animatedIconDrawable by remember { mutableStateOf(0) }
+    val iconVisibleState = remember { MutableTransitionState(false) }
+    var animationJob: Job? by remember { mutableStateOf(null) }
     var showLikeHeart by remember { mutableStateOf(false) }
-    val heartScale by animateFloatAsState(targetValue = if (showLikeHeart) { 1.2f } else 0f, animationSpec = spring())
-
+    val heartScale by animateFloatAsState(targetValue = if (showLikeHeart) 1.2f else 0f, animationSpec = spring())
     val context = LocalContext.current
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { viewModel.onTappedScreen() },
-                    onDoubleTap = {
-                        showLikeHeart = true
-                        viewModel.likeVideo(postId)
-                    }
-                )
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        AndroidView(
-            factory = { playerView },
-            modifier = Modifier
-                .aspectRatio(aspectRatio)
-                .align(Alignment.Center),
-            update = { view ->
-                view.invalidate()
-            }
-        )
-        
+    Box(modifier = modifier.fillMaxSize().pointerInput(Unit) {
+        detectTapGestures(onTap = { viewModel.onTappedScreen() }, onDoubleTap = { showLikeHeart = true; viewModel.likeVideo(postId) })
+    }, contentAlignment = Alignment.Center) {
+        AndroidView(factory = { playerView }, modifier = Modifier.aspectRatio(aspectRatio).align(Alignment.Center), update = { it.invalidate() })
         if (showLikeHeart) {
-            Icon(
-                imageVector = Icons.Default.Favorite,
-                contentDescription = null,
-                tint = Color.Red.copy(alpha = 0.8f),
-                modifier = Modifier.size(120.dp).scale(heartScale)
-            )
-            LaunchedEffect(Unit) {
-                delay(500)
-                showLikeHeart = false
-            }
+            Icon(imageVector = Icons.Default.Favorite, contentDescription = null, tint = Color.Red.copy(alpha = 0.8f), modifier = Modifier.size(120.dp).scale(heartScale))
+            LaunchedEffect(Unit) { delay(500); showLikeHeart = false }
         }
-
-        AnimatedVisibility(
-            visibleState = iconVisibleState,
-            enter = scaleIn(
-                spring(Spring.DampingRatioMediumBouncy)
-            ),
-            exit = scaleOut(tween(150)),
-            modifier = Modifier.align(Alignment.Center)
-        ) {
-            Icon(
-                painter = painterResource(animatedIconDrawable),
-                contentDescription = null,
-                tint = Color.White.copy(0.90f),
-                modifier = Modifier
-                    .size(100.dp)
-            )
+        AnimatedVisibility(visibleState = iconVisibleState, enter = scaleIn(spring(Spring.DampingRatioMediumBouncy)), exit = scaleOut(tween(150)), modifier = Modifier.align(Alignment.Center)) {
+            Icon(painter = painterResource(animatedIconDrawable), contentDescription = null, tint = Color.White.copy(0.90f), modifier = Modifier.size(100.dp))
         }
     }
     LaunchedEffect(key1 = true) {
         viewModel.effect.collect { effect->
             when (effect) {
-                is PlayerErrorEffect -> {
-                    val message = if (effect.code == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED || effect.code == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT)
-                        "Please check your internet connection"
-                    else
-                        "An error occurred. Code: ${effect.code}"
-                    showToast(context, message)
-                }
+                is PlayerErrorEffect -> showToast(context, "An error occurred. Code: ${effect.code}")
                 is AnimationEffect -> {
                     animatedIconDrawable = effect.drawable
                     animationJob?.cancel()
-                    animationJob = launch {
-                        iconVisibleState.targetState = true
-                        delay(800)
-                        iconVisibleState.targetState = false
-                    }
+                    animationJob = launch { iconVisibleState.targetState = true; delay(800); iconVisibleState.targetState = false }
                 }
-                is ResetAnimationEffect -> {
-                    iconVisibleState.targetState = false
-                    animationJob?.cancel()
-                }
+                is ResetAnimationEffect -> { iconVisibleState.targetState = false; animationJob?.cancel() }
                 else -> {}
             }
         }
@@ -751,20 +550,13 @@ fun rememberPlayerView(player: Player): PlayerView {
     val context = LocalContext.current
     val playerView = remember(player) {
         PlayerView(context).apply {
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT)
+            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             useController = false
             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
             setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
             this.player = player
         }
     }
-    
-    DisposableEffect(key1 = player) {
-        onDispose {
-            playerView.player = null
-        }
-    }
+    DisposableEffect(key1 = player) { onDispose { playerView.player = null } }
     return playerView
 }

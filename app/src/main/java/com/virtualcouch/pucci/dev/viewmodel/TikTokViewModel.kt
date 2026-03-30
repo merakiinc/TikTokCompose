@@ -135,6 +135,19 @@ class TikTokViewModel @Inject constructor(
         }
     }
 
+    fun fetchAuthorProfile(authorId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _state.update { it.copy(authorProfile = null, authorVideos = emptyList()) }
+            val result = socialRepository.getAuthorProfile(authorId)
+            _state.update { currentState ->
+                currentState.copy(
+                    authorProfile = result?.first,
+                    authorVideos = result?.second ?: emptyList()
+                )
+            }
+        }
+    }
+
     fun login(email: String, password: String) {
         if (email == "teste@teste.com" && password == "123456") {
             viewModelScope.launch {

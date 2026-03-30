@@ -14,6 +14,11 @@ data class VideoUiState(
     val followingVideos: List<VideoData> = emptyList(),
     val userVideos: List<VideoData> = emptyList(),
     val userProfile: UserProfile? = null,
+    
+    // Novos campos para o perfil do autor (visto via swipe)
+    val authorProfile: UserProfile? = null,
+    val authorVideos: List<VideoData> = emptyList(),
+    
     val activeFeed: FeedType = FeedType.FOR_YOU
 ) {
     val currentVideosList: List<VideoData>
@@ -24,10 +29,8 @@ data class VideoUiState(
             if (player.currentMediaItemIndex == position && player.isPlaying)
                 return
 
-            // Move para o vídeo sem resetar o player
             player.seekToDefaultPosition(position)
             player.playWhenReady = true
-            // REMOVIDO: player.prepare() -> Isso causava a lentidão ao descartar o buffer
         }
     }
 }

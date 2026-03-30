@@ -90,6 +90,25 @@ data class FeedUserStatus(
     val isFollowing: Boolean
 )
 
+@JsonClass(generateAdapter = true)
+data class AuthorProfileResponse(
+    val id: String,
+    val name: String?,
+    val username: String?,
+    val avatarUrl: String?,
+    val bio: String?,
+    val links: List<AuthorLink>?,
+    val stats: FeedStats,
+    val isFollowing: Boolean,
+    val videos: List<UserVideoResponse>
+)
+
+@JsonClass(generateAdapter = true)
+data class AuthorLink(
+    val label: String,
+    val url: String
+)
+
 interface SocialApi {
     @GET("v1/social/presigned-url")
     suspend fun getPresignedUrl(
@@ -128,4 +147,9 @@ interface SocialApi {
     suspend fun getFollowingFeed(
         @Query("after") after: String? = null
     ): Response<FeedResponse>
+
+    @GET("v1/social/author-profile/{userId}")
+    suspend fun getAuthorProfile(
+        @Path("userId") userId: String
+    ): Response<AuthorProfileResponse>
 }
