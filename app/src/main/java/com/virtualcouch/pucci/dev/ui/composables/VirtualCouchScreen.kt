@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.VerticalPager
@@ -100,6 +101,9 @@ fun VirtualCouchScreen(
 
     var isTransitioningToProfile by remember { mutableStateOf(false) }
     var browserUrl by remember { mutableStateOf<String?>(null) }
+    
+    // ESTADO PARA NAVEGAÇÃO INTERNA DO PERFIL
+    var selectedAuthorVideoIndex by remember { mutableStateOf<Int?>(null) }
 
     ComposableLifecycle { _, event ->
         when (event) {
@@ -121,8 +125,8 @@ fun VirtualCouchScreen(
 
     val mainPagerState = rememberPagerState(initialPage = 1) { 3 } 
 
-    LaunchedEffect(currentRoute, mainPagerState.currentPage, isTransitioningToProfile, browserUrl) {
-        if (currentRoute != "main" || mainPagerState.currentPage == 2 || isTransitioningToProfile || browserUrl != null) {
+    LaunchedEffect(currentRoute, mainPagerState.currentPage, isTransitioningToProfile, browserUrl, selectedAuthorVideoIndex) {
+        if (currentRoute != "main" || (mainPagerState.currentPage == 2 && selectedAuthorVideoIndex == null) || isTransitioningToProfile || browserUrl != null) {
             viewModel.pause()
         } else {
             viewModel.play()
@@ -131,6 +135,7 @@ fun VirtualCouchScreen(
 
     LaunchedEffect(mainPagerState.currentPage) {
         if (mainPagerState.currentPage < 2) {
+            selectedAuthorVideoIndex = null // Reseta se sair da tela do perfil
             val newFeed = if (mainPagerState.currentPage == 0) FeedType.FOLLOWING else FeedType.FOR_YOU
             viewModel.switchFeed(newFeed)
         } else if (mainPagerState.currentPage == 2) {
@@ -151,7 +156,7 @@ fun VirtualCouchScreen(
             modifier = modifier.fillMaxSize(),
             backgroundColor = Color.Black,
             bottomBar = {
-                if (browserUrl == null && (currentRoute != "main" || mainPagerState.currentPage < 2)) {
+                if (browserUrl == null && selectedAuthorVideoIndex == null && (currentRoute != "main" || mainPagerState.currentPage < 2)) {
                     VirtualCouchBottomNavigation(
                         currentRoute = currentRoute,
                         onNavigate = { route ->
@@ -172,7 +177,8 @@ fun VirtualCouchScreen(
                 }
             }
         ) { paddingValues ->
-            val finalPadding = if (browserUrl != null || (currentRoute == "main" && mainPagerState.currentPage == 2)) PaddingValues(0.dp) else paddingValues
+            val isFullScreen = browserUrl != null || selectedAuthorVideoIndex != null || (currentRoute == "main" && mainPagerState.currentPage == 2)
+            val finalPadding = if (isFullScreen) PaddingValues(0.dp) else paddingValues
             
             Box(modifier = Modifier.fillMaxSize().padding(finalPadding)) {
                 when (currentRoute) {
@@ -180,22 +186,36 @@ fun VirtualCouchScreen(
                         HorizontalPager(
                             state = mainPagerState,
                             modifier = Modifier.fillMaxSize(),
-                            userScrollEnabled = browserUrl == null
+                            userScrollEnabled = browserUrl == null && selectedAuthorVideoIndex == null
                         ) { page ->
                             when (page) {
                                 0 -> VideoPager(state = state, feedType = FeedType.FOLLOWING, viewModel = viewModel, onCommentsClick = { scope.launch { sheetState.show() } })
                                 1 -> VideoPager(state = state, feedType = FeedType.FOR_YOU, viewModel = viewModel, onCommentsClick = { scope.launch { sheetState.show() } })
-                                2 -> AuthorProfileScreen(
-                                    profile = state.authorProfile, 
-                                    videos = state.authorVideos,
-                                    currentUserId = state.userProfile?.id,
-                                    onBack = { scope.launch { mainPagerState.animateScrollToPage(1) } },
-                                    onOpenLink = { url -> browserUrl = url }
-                                )
+                                2 -> {
+                                    if (selectedAuthorVideoIndex == null) {
+                                        AuthorProfileScreen(
+                                            profile = state.authorProfile, 
+                                            videos = state.authorVideos,
+                                            currentUserId = state.userProfile?.id,
+                                            onBack = { scope.launch { mainPagerState.animateScrollToPage(1) } },
+                                            onOpenLink = { url -> browserUrl = url },
+                                            onVideoClick = { index -> selectedAuthorVideoIndex = index }
+                                        )
+                                    } else {
+                                        AuthorVideoPlayerScreen(
+                                            videos = state.authorVideos,
+                                            initialIndex = selectedAuthorVideoIndex!!,
+                                            state = state,
+                                            viewModel = viewModel,
+                                            onBack = { selectedAuthorVideoIndex = null },
+                                            onCommentsClick = { scope.launch { sheetState.show() } }
+                                        )
+                                    }
+                                }
                             }
                         }
 
-                        if (mainPagerState.currentPage < 2) {
+                        if (mainPagerState.currentPage < 2 && browserUrl == null) {
                             VirtualCouchTopBar(
                                 modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding(),
                                 activeFeed = if (mainPagerState.currentPage == 0) FeedType.FOLLOWING else FeedType.FOR_YOU,
@@ -240,6 +260,59 @@ fun VirtualCouchScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun AuthorVideoPlayerScreen(
+    videos: List<VideoData>,
+    initialIndex: Int,
+    state: VideoUiState,
+    viewModel: TikTokViewModel,
+    onBack: () -> Unit,
+    onCommentsClick: () -> Unit
+) {
+    val pagerState = rememberPagerState(initialPage = initialIndex) { videos.size }
+
+    // Sincroniza o player com o vídeo atual do perfil
+    LaunchedEffect(pagerState.currentPage) {
+        state.playAuthorMediaAt(pagerState.currentPage)
+    }
+
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        VerticalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+            beyondViewportPageCount = 1
+        ) { index ->
+            if (index == pagerState.currentPage) {
+                VideoCard(
+                    player = state.player,
+                    video = videos[index],
+                    viewModel = viewModel,
+                    onCommentsClick = onCommentsClick
+                )
+            } else {
+                VideoThumbnail(video = videos[index])
+            }
+        }
+
+        // BOTAO VOLTAR PARA O GRID DO PERFIL
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier
+                .statusBarsPadding()
+                .padding(8.dp)
+                .align(Alignment.TopStart)
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Voltar ao perfil",
+                tint = Color.White,
+                modifier = Modifier.size(28.dp)
+            )
         }
     }
 }
@@ -326,7 +399,8 @@ fun AuthorProfileScreen(
     videos: List<VideoData>,
     currentUserId: String?,
     onBack: () -> Unit,
-    onOpenLink: (String) -> Unit 
+    onOpenLink: (String) -> Unit,
+    onVideoClick: (Int) -> Unit // Novo callback
 ) {
     val context = LocalContext.current
 
@@ -426,8 +500,12 @@ fun AuthorProfileScreen(
                     horizontalArrangement = Arrangement.spacedBy(1.dp),
                     verticalArrangement = Arrangement.spacedBy(1.dp)
                 ) {
-                    items(videos) { video ->
-                        Box(modifier = Modifier.aspectRatio(3f/4f).background(Color.LightGray)) {
+                    itemsIndexed(videos) { index, video ->
+                        Box(modifier = Modifier
+                            .aspectRatio(3f/4f)
+                            .background(Color.LightGray)
+                            .clickable { onVideoClick(index) } // Abre o player
+                        ) {
                             Image(
                                 painter = rememberAsyncImagePainter(video.previewImageUri),
                                 contentDescription = null,
@@ -731,7 +809,11 @@ fun Player(playerView: PlayerView, viewModel: TikTokViewModel, modifier: Modifie
     Box(modifier = modifier.fillMaxSize().pointerInput(Unit) {
         detectTapGestures(onTap = { viewModel.onTappedScreen() }, onDoubleTap = { showLikeHeart = true; viewModel.likeVideo(postId) })
     }, contentAlignment = Alignment.Center) {
-        AndroidView(factory = { playerView }, modifier = Modifier.aspectRatio(aspectRatio).align(Alignment.Center), update = { it.invalidate() })
+        AndroidView(
+            factory = { playerView }, 
+            modifier = Modifier.fillMaxSize(), // OCUPA TUDO
+            update = { it.invalidate() }
+        )
         if (showLikeHeart) {
             Icon(imageVector = Icons.Default.Favorite, contentDescription = null, tint = Color.Red.copy(alpha = 0.8f), modifier = Modifier.size(120.dp).scale(heartScale))
             LaunchedEffect(Unit) { delay(500); showLikeHeart = false }
@@ -764,7 +846,7 @@ fun rememberPlayerView(player: Player): PlayerView {
         PlayerView(context).apply {
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             useController = false
-            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
+            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM // MANTEM PROPORCAO E PREENCHE TELA
             setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
             this.player = player
         }

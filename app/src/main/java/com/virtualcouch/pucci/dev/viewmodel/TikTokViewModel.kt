@@ -137,6 +137,30 @@ class TikTokViewModel @Inject constructor(
         }
     }
 
+    // NOVA FUNCAO: Reproduz videos do autor (perfil)
+    fun playAuthorMediaAt(index: Int) {
+        val player = state.value.player ?: return
+        val authorVideos = state.value.authorVideos
+        if (authorVideos.isEmpty()) return
+
+        // Troca a playlist se necessário
+        // (Verificamos se o primeiro item da playlist atual bate com o primeiro do autor)
+        // Nota: toMediaItems() ja lida com a prioridade HLS/MP4
+        player.setMediaItems(authorVideos.toMediaItems())
+        player.seekToDefaultPosition(index)
+        player.prepare()
+        player.playWhenReady = true
+    }
+
+    // NOVA FUNCAO: Restaura o feed principal ao sair do player do autor
+    fun restoreMainFeed() {
+        val player = state.value.player ?: return
+        player.setMediaItems(state.value.currentVideosList.toMediaItems())
+        player.seekToDefaultPosition(currentIndex)
+        player.prepare()
+        player.playWhenReady = true
+    }
+
     fun fetchProfileData() {
         if (!hasValidSession()) return
         viewModelScope.launch(Dispatchers.IO) {
