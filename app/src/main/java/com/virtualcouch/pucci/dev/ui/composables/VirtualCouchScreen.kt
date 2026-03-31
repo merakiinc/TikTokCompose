@@ -127,12 +127,10 @@ fun VirtualCouchScreen(
             val newFeed = if (mainPagerState.currentPage == 0) FeedType.FOLLOWING else FeedType.FOR_YOU
             viewModel.switchFeed(newFeed)
         } else if (mainPagerState.currentPage == 2) {
-            // Lazy Load: Busca o perfil do autor do vídeo atual ao deslizar para a esquerda
+            // Lazy Load: Busca o perfil do dono do vídeo atual
             val currentVideo = state.currentVideosList.getOrNull(state.player?.currentMediaItemIndex ?: -1)
             currentVideo?.let { video ->
-                // Aqui você precisaria do authorId vindo do backend. Por enquanto usamos o nome ou ID do post.
-                // Idealmente o VideoData teria um campo authorId.
-                viewModel.fetchAuthorProfile(video.id) 
+                viewModel.fetchAuthorProfile(video.authorId) 
             }
         }
     }

@@ -2,6 +2,7 @@ package com.virtualcouch.pucci.dev.domain.models
 
 data class VideoData(
     val id: String,
+    val authorId: String = "", // Novo campo para o ID do dono do vídeo
     val mediaUri: String,
     val previewImageUri: String?,
     val aspectRatio: Float? = null,

@@ -74,14 +74,20 @@ class TikTokViewModel @Inject constructor(
     val calendarEvents: Flow<List<EventEntity>> = calendarRepository.allEvents
 
     init {
-        checkSession()
-        // Carrega APENAS o feed principal no início
-        loadMoreVideos(FeedType.FOR_YOU)
+        // Inicialização SEQUENCIAL: Primeiro Session, DEPOIS Feed.
+        viewModelScope.launch {
+            checkSessionTask() 
+            loadMoreVideos(FeedType.FOR_YOU)
+            
+            // Só libera a Splash Screen após carregar o primeiro feed
+            _isCheckingSession.value = false
+        }
     }
 
-    private fun checkSession() {
-        viewModelScope.launch(Dispatchers.IO) {
+    private suspend fun checkSessionTask() {
+        withContext(Dispatchers.IO) {
             if (tokenManager.hasRefreshToken() && tokenManager.isAccessTokenExpired()) {
+                Log.d(tag, "Startup: Access token expired. Refreshing...")
                 try {
                     val refreshResponse = authApi.refreshTokens(RefreshTokenRequest(refreshToken = tokenManager.getRefreshToken()!!))
                     if (refreshResponse.isSuccessful && refreshResponse.body() != null) {
@@ -92,13 +98,16 @@ class TikTokViewModel @Inject constructor(
                             refreshToken = tokens.refresh.token,
                             refreshTokenExpires = tokens.refresh.expires
                         )
+                        Log.i(tag, "Startup: Refresh successful.")
                     } else {
+                        Log.e(tag, "Startup: Refresh failed. Clearing session.")
                         tokenManager.clearTokens()
                     }
                 } catch (e: Exception) {
+                    Log.e(tag, "Startup: Error during refresh", e)
                 }
             }
-            _isCheckingSession.value = false
+            // Removido o _isCheckingSession.value = false daqui
         }
     }
 
@@ -161,7 +170,6 @@ class TikTokViewModel @Inject constructor(
                 )
                 _effect.emit(LoadingEffect(false))
                 _effect.emit(LoginSuccessEffect)
-                // Não dispara sync aqui, o ciclo de vida da tela cuidará disso
             }
             return
         }

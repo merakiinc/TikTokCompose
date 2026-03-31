@@ -31,16 +31,14 @@ class VirtualCouchFeedRepository @Inject constructor(
                 Log.d(tag, "Received ${feedResponse.videos.size} videos from backend")
                 
                 val videoData = feedResponse.videos.map { video ->
-                    // VOLTANDO PARA HLS COMO PRIORIDADE (já que funcionava no Reddit)
                     val rawUri = video.hlsUrl ?: video.videoUrl ?: video.dashUrl ?: ""
                     val cleanUrl = rawUri.replace("\\s".toRegex(), "")
                     
-                    Log.d(tag, "Mapping video ID: ${video.id}, URL: $cleanUrl")
-                    
                     VideoData(
                         id = video.id,
+                        authorId = video.author.id, // MAPEAMENTO CORRETO: ID do usuário e não do vídeo
                         mediaUri = cleanUrl,
-                        previewImageUri = video.thumbnailUrl, // Pode ser null
+                        previewImageUri = video.thumbnailUrl, 
                         aspectRatio = video.aspectRatio ?: 0.5625f,
                         authorName = video.author.username ?: video.author.name?.split(" ")?.firstOrNull() ?: "Psicólogo",
                         authorAvatar = video.author.avatarUrl ?: "https://api.dicebear.com/7.x/avataaars/svg?seed=${video.author.id}",
