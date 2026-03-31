@@ -2,7 +2,9 @@ package com.virtualcouch.pucci.dev.util
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Base64
 import dagger.hilt.android.qualifiers.ApplicationContext
+import org.json.JSONObject
 import java.time.Instant
 import java.time.ZonedDateTime
 import javax.inject.Inject
@@ -42,11 +44,24 @@ class TokenManager @Inject constructor(
 
     fun getRefreshToken(): String? = prefs.getString(KEY_REFRESH_TOKEN, null)
 
+    // Extrai o ID do usuário (campo 'sub') de dentro do JWT
+    fun getUserId(): String? {
+        val token = getAccessToken() ?: return null
+        return try {
+            val parts = token.split(".")
+            if (parts.size < 2) return null
+            val payload = String(Base64.decode(parts[1], Base64.DEFAULT))
+            val json = JSONObject(payload)
+            json.optString("sub")
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     fun isAccessTokenExpired(): Boolean {
         val expiresAt = prefs.getString(KEY_ACCESS_EXPIRES, null) ?: return true
         return try {
             val expirationDate = ZonedDateTime.parse(expiresAt).toInstant()
-            // Retorna verdadeiro se agora for depois da expiração (com margem de 1 minuto)
             Instant.now().isAfter(expirationDate.minusSeconds(60))
         } catch (e: Exception) {
             true

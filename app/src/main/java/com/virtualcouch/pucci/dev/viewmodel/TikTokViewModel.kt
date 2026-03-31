@@ -81,9 +81,11 @@ class TikTokViewModel @Inject constructor(
             // 1. Primeiro garante que o token está atualizado (se houver um)
             checkSessionTask() 
             
-            // 2. Se temos uma sessão (ou refresh funcionou), carrega o feed
+            // 2. Se temos uma sessão (ou refresh funcionou), carrega o feed e o perfil base
             if (hasValidSession()) {
-                Log.d(tag, "Startup: Session valid. Loading initial feed...")
+                Log.d(tag, "Startup: Session valid. Loading initial data...")
+                // Carrega o perfil do próprio usuário para saber o ID (necessário para o botão Seguir)
+                fetchProfileData()
                 // Chamamos a versão suspend interna para esperar a conclusão
                 loadVideosInternal(FeedType.FOR_YOU)
             } else {
@@ -140,11 +142,15 @@ class TikTokViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             val profileResponse = socialRepository.getUserProfile()
             val videos = socialRepository.getUserVideos()
+            
+            // Tenta pegar o ID da resposta ou extrai do Token JWT
+            val idFromToken = tokenManager.getUserId()
+
             _state.update { currentState ->
                 currentState.copy(
                     userProfile = profileResponse?.let {
                         UserProfile(
-                            id = it.id, // ID mapeado aqui
+                            id = it.id ?: idFromToken, // Fallback para o ID do Token
                             name = it.name,
                             username = it.username,
                             avatarUrl = it.avatarUrl,
