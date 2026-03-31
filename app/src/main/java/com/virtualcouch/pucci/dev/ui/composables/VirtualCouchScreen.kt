@@ -13,6 +13,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,6 +31,7 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
@@ -52,6 +54,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -99,7 +102,6 @@ fun VirtualCouchScreen(
 
     var isTransitioningToProfile by remember { mutableStateOf(false) }
     
-    // Estado para o Browser Interno
     var browserUrl by remember { mutableStateOf<String?>(null) }
 
     ComposableLifecycle { _, event ->
@@ -122,7 +124,6 @@ fun VirtualCouchScreen(
 
     val mainPagerState = rememberPagerState(initialPage = 1) { 3 } 
 
-    // Lógica Unificada de Pausa de Áudio
     LaunchedEffect(currentRoute, mainPagerState.currentPage, isTransitioningToProfile, browserUrl) {
         if (currentRoute != "main" || mainPagerState.currentPage == 2 || isTransitioningToProfile || browserUrl != null) {
             viewModel.pause()
@@ -192,7 +193,7 @@ fun VirtualCouchScreen(
                                     videos = state.authorVideos,
                                     currentUserId = state.userProfile?.id,
                                     onBack = { scope.launch { mainPagerState.animateScrollToPage(1) } },
-                                    onOpenLink = { url -> browserUrl = url } // Abre link na WebView
+                                    onOpenLink = { url -> browserUrl = url }
                                 )
                             }
                         }
@@ -211,7 +212,6 @@ fun VirtualCouchScreen(
                     "profile" -> ProfileScreen(profile = state.userProfile, videos = state.userVideos, onLogout = onLogout)
                 }
 
-                // OVERLAY DA WEBVIEW
                 browserUrl?.let { url ->
                     WebViewScreen(
                         url = url,
@@ -258,7 +258,6 @@ fun WebViewScreen(
     BackHandler { onClose() }
 
     Column(modifier = Modifier.fillMaxSize().background(Color.White)) {
-        // Top Bar do Browser
         TopAppBar(
             backgroundColor = Color.White,
             contentColor = Color.Black,
@@ -296,7 +295,6 @@ fun WebViewScreen(
             }
         )
 
-        // Componente WebView
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -310,12 +308,10 @@ fun WebViewScreen(
                     webViewClient = object : WebViewClient() {
                         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                             val targetUrl = request?.url?.toString() ?: ""
-                            // BLOQUEIO DE APPS: Só permite carregar se for http ou https
                             return if (targetUrl.startsWith("http://") || targetUrl.startsWith("https://")) {
-                                false // Deixa carregar na WebView
+                                false 
                             } else {
-                                Log.w("WebView", "Blocked attempt to open App URL: $targetUrl")
-                                true // Consome o evento, bloqueando a abertura do app
+                                true 
                             }
                         }
                     }
@@ -333,13 +329,12 @@ fun AuthorProfileScreen(
     videos: List<VideoData>,
     currentUserId: String?,
     onBack: () -> Unit,
-    onOpenLink: (String) -> Unit // Novo callback para abrir link
+    onOpenLink: (String) -> Unit 
 ) {
     val context = LocalContext.current
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFFF8F8F8))) {
         Column(modifier = Modifier.fillMaxSize().padding(top = 16.dp)) {
-            // Header Estruturado
             Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(contentAlignment = Alignment.Center) {
                     Image(
@@ -388,14 +383,13 @@ fun AuthorProfileScreen(
                         color = Color(0xFF1D4EEE),
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.clickable {
-                            onOpenLink(url) // Agora chama a WebView interna
+                            onOpenLink(url) 
                         }.padding(8.dp)
                     )
                 }
                 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Botão Seguir
                 if (profile != null && profile.id != currentUserId) {
                     Button(
                         onClick = { /* Follow Logic */ },
@@ -456,7 +450,6 @@ fun AuthorProfileScreen(
             }
         }
 
-        // BOTAO VOLTAR (Canto Superior Esquerdo)
         IconButton(
             onClick = onBack,
             modifier = Modifier
@@ -617,7 +610,90 @@ fun VideoCard(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(video.description, color = Color.White, fontSize = 14.sp)
             }
+
+            if (player != null) {
+                VideoSeekBar(
+                    player = player,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp)
+                        .offset(y = (-4).dp) 
+                )
+            }
         }
+    }
+}
+
+@Composable
+fun VideoSeekBar(
+    player: Player,
+    modifier: Modifier = Modifier
+) {
+    var currentPosition by remember { mutableStateOf(player.currentPosition) }
+    var totalDuration by remember { mutableStateOf(player.duration.coerceAtLeast(0L)) }
+    var isDragging by remember { mutableStateOf(false) }
+
+    // Atualização rápida para fluidez total
+    LaunchedEffect(player) {
+        while (true) {
+            if (!isDragging) {
+                currentPosition = player.currentPosition
+                totalDuration = player.duration.coerceAtLeast(0L)
+            }
+            delay(50) 
+        }
+    }
+
+    val progress = if (totalDuration > 0) currentPosition.toFloat() / totalDuration.toFloat() else 0f
+
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(24.dp) // Área de toque maior
+            .pointerInput(totalDuration) {
+                detectTapGestures { offset ->
+                    val newProgress = (offset.x / size.width).coerceIn(0f, 1f)
+                    player.seekTo((newProgress * totalDuration).toLong())
+                }
+            }
+            .pointerInput(totalDuration) {
+                detectHorizontalDragGestures(
+                    onDragStart = { isDragging = true },
+                    onDragEnd = { isDragging = false },
+                    onHorizontalDrag = { change, _ ->
+                        val newProgress = (change.position.x / size.width).coerceIn(0f, 1f)
+                        player.seekTo((newProgress * totalDuration).toLong())
+                        currentPosition = (newProgress * totalDuration).toLong()
+                    }
+                )
+            },
+        contentAlignment = Alignment.CenterStart
+    ) {
+        // Linha base (fundo)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp) // Linha super fina
+                .background(Color.White.copy(alpha = 0.2f))
+        )
+        
+        // Linha de progresso (ativa)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(progress)
+                .height(1.dp) // Linha super fina
+                .background(Color.White)
+        )
+        
+        // Bolinha indicadora (Thumb menor)
+        Box(
+            modifier = Modifier
+                .offset(x = (maxWidth * progress).coerceAtLeast(0.dp).minus(if (progress > 0.95f) 6.dp else 0.dp))
+                .size(6.dp) // Bolinha menor
+                .clip(CircleShape)
+                .background(Color.White)
+        )
     }
 }
 
