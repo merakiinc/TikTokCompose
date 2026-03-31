@@ -137,16 +137,12 @@ class TikTokViewModel @Inject constructor(
         }
     }
 
-    // NOVA FUNCAO: Reproduz videos do autor (perfil)
-    fun playAuthorMediaAt(index: Int) {
+    // NOVA FUNCAO: Reproduz qualquer lista de videos (autor ou proprio usuario)
+    fun playVideosList(videos: List<VideoData>, index: Int) {
         val player = state.value.player ?: return
-        val authorVideos = state.value.authorVideos
-        if (authorVideos.isEmpty()) return
+        if (videos.isEmpty()) return
 
-        // Troca a playlist se necessário
-        // (Verificamos se o primeiro item da playlist atual bate com o primeiro do autor)
-        // Nota: toMediaItems() ja lida com a prioridade HLS/MP4
-        player.setMediaItems(authorVideos.toMediaItems())
+        player.setMediaItems(videos.toMediaItems())
         player.seekToDefaultPosition(index)
         player.prepare()
         player.playWhenReady = true
