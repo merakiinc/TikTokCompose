@@ -31,49 +31,56 @@ fun VirtualCouchBottomNavigation(
     onNavigate: (String) -> Unit = {},
     onAddClick: () -> Unit = {}
 ) {
-    Row(
+    // Surface preta que cobre até a barra de navegação do sistema
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(56.dp)
-            .background(Color.Black),
-        verticalAlignment = Alignment.CenterVertically
+            .background(Color.Black)
+            .navigationBarsPadding() // Garante que o fundo preto cubra a área do sistema
     ) {
-        NavigationItem(
-            modifier = Modifier.weight(1f),
-            icon = Icons.Default.Home,
-            label = "Sessões",
-            selected = currentRoute == "main",
-            onClick = { onNavigate("main") }
-        )
-        NavigationItem(
-            modifier = Modifier.weight(1f),
-            icon = Icons.Default.CalendarMonth,
-            label = "Agenda",
-            selected = currentRoute == "agenda",
-            onClick = { onNavigate("agenda") }
-        )
-        Box(
+        Row(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight(),
-            contentAlignment = Alignment.Center
+                .fillMaxWidth()
+                .height(56.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            VirtualCouchAddButton(onClick = onAddClick)
+            NavigationItem(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Default.Home,
+                label = "Sessões",
+                selected = currentRoute == "main",
+                onClick = { onNavigate("main") }
+            )
+            NavigationItem(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Default.CalendarMonth,
+                label = "Agenda",
+                selected = currentRoute == "agenda",
+                onClick = { onNavigate("agenda") }
+            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                contentAlignment = Alignment.Center
+            ) {
+                VirtualCouchAddButton(onClick = onAddClick)
+            }
+            NavigationItem(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Outlined.MailOutline,
+                label = "Mensagens",
+                selected = currentRoute == "messages",
+                onClick = { /* onNavigate("messages") */ }
+            )
+            NavigationItem(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Outlined.Person,
+                label = "Perfil",
+                selected = currentRoute == "profile",
+                onClick = { onNavigate("profile") }
+            )
         }
-        NavigationItem(
-            modifier = Modifier.weight(1f),
-            icon = Icons.Outlined.MailOutline,
-            label = "Mensagens",
-            selected = currentRoute == "messages",
-            onClick = { /* onNavigate("messages") */ }
-        )
-        NavigationItem(
-            modifier = Modifier.weight(1f),
-            icon = Icons.Outlined.Person,
-            label = "Perfil",
-            selected = currentRoute == "profile",
-            onClick = { onNavigate("profile") }
-        )
     }
 }
 

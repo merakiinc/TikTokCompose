@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -54,7 +55,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -88,8 +88,6 @@ fun VirtualCouchScreen(
     onNavigate: (String) -> Unit = {}, 
     onLogout: () -> Unit = {}
 ) {
-    var isLoading by remember { mutableStateOf(false) }
-    var loadingMessage by remember { mutableStateOf("") }
     val context = LocalContext.current
     val state by viewModel.state.collectAsState()
     val scope = rememberCoroutineScope()
@@ -101,7 +99,6 @@ fun VirtualCouchScreen(
     var pendingVideoUri by remember { mutableStateOf<Uri?>(null) }
 
     var isTransitioningToProfile by remember { mutableStateOf(false) }
-    
     var browserUrl by remember { mutableStateOf<String?>(null) }
 
     ComposableLifecycle { _, event ->
@@ -572,7 +569,6 @@ fun VideoCard(
     viewModel: TikTokViewModel = hiltViewModel(),
     onCommentsClick: () -> Unit = {}
 ) {
-    val context = LocalContext.current
     var showPlayer by remember { mutableStateOf(false) }
     val playerView = player?.let { rememberPlayerView(it) }
 
@@ -634,7 +630,6 @@ fun VideoSeekBar(
     var totalDuration by remember { mutableStateOf(player.duration.coerceAtLeast(0L)) }
     var isDragging by remember { mutableStateOf(false) }
 
-    // Atualização rápida para fluidez total
     LaunchedEffect(player) {
         while (true) {
             if (!isDragging) {
@@ -650,7 +645,7 @@ fun VideoSeekBar(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(24.dp) // Área de toque maior
+            .height(24.dp) 
             .pointerInput(totalDuration) {
                 detectTapGestures { offset ->
                     val newProgress = (offset.x / size.width).coerceIn(0f, 1f)
@@ -670,30 +665,9 @@ fun VideoSeekBar(
             },
         contentAlignment = Alignment.CenterStart
     ) {
-        // Linha base (fundo)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp) // Linha super fina
-                .background(Color.White.copy(alpha = 0.2f))
-        )
-        
-        // Linha de progresso (ativa)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(progress)
-                .height(1.dp) // Linha super fina
-                .background(Color.White)
-        )
-        
-        // Bolinha indicadora (Thumb menor)
-        Box(
-            modifier = Modifier
-                .offset(x = (maxWidth * progress).coerceAtLeast(0.dp).minus(if (progress > 0.95f) 6.dp else 0.dp))
-                .size(6.dp) // Bolinha menor
-                .clip(CircleShape)
-                .background(Color.White)
-        )
+        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.2f)))
+        Box(modifier = Modifier.fillMaxWidth(progress).height(1.dp).background(Color.White))
+        Box(modifier = Modifier.offset(x = (maxWidth * progress).coerceAtLeast(0.dp).minus(if (progress > 0.95f) 6.dp else 0.dp)).size(6.dp).clip(CircleShape).background(Color.White))
     }
 }
 
@@ -752,7 +726,7 @@ fun Player(playerView: PlayerView, viewModel: TikTokViewModel, modifier: Modifie
     val iconVisibleState = remember { MutableTransitionState(false) }
     var animationJob: Job? by remember { mutableStateOf(null) }
     var showLikeHeart by remember { mutableStateOf(false) }
-    val heartScale by animateFloatAsState(targetValue = if (showLikeHeart) 1.2f else 0f, animationSpec = spring())
+    val heartScale by animateFloatAsState(targetValue = if (showLikeHeart) { 1.2f } else { 0f }, animationSpec = spring())
     val context = LocalContext.current
     Box(modifier = modifier.fillMaxSize().pointerInput(Unit) {
         detectTapGestures(onTap = { viewModel.onTappedScreen() }, onDoubleTap = { showLikeHeart = true; viewModel.likeVideo(postId) })
