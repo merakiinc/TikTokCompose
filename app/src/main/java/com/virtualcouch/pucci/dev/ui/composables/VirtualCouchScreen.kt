@@ -113,7 +113,6 @@ fun VirtualCouchScreen(
 
     val mainPagerState = rememberPagerState(initialPage = 1) { 3 } 
 
-    // Lógica Unificada de Pausa de Áudio
     LaunchedEffect(currentRoute, mainPagerState.currentPage, isTransitioningToProfile) {
         if (currentRoute != "main" || mainPagerState.currentPage == 2 || isTransitioningToProfile) {
             viewModel.pause()
@@ -127,7 +126,6 @@ fun VirtualCouchScreen(
             val newFeed = if (mainPagerState.currentPage == 0) FeedType.FOLLOWING else FeedType.FOR_YOU
             viewModel.switchFeed(newFeed)
         } else if (mainPagerState.currentPage == 2) {
-            // Lazy Load: Busca o perfil do dono do vídeo atual
             val currentVideo = state.currentVideosList.getOrNull(state.player?.currentMediaItemIndex ?: -1)
             currentVideo?.let { video ->
                 viewModel.fetchAuthorProfile(video.authorId) 
@@ -148,9 +146,7 @@ fun VirtualCouchScreen(
                 VirtualCouchBottomNavigation(
                     currentRoute = currentRoute,
                     onNavigate = { route ->
-                        if (route == "profile") {
-                            viewModel.fetchProfileData()
-                        }
+                        if (route == "profile") viewModel.fetchProfileData()
                         onNavigate(route)
                     },
                     onAddClick = {
@@ -176,7 +172,11 @@ fun VirtualCouchScreen(
                             when (page) {
                                 0 -> VideoPager(state = state, feedType = FeedType.FOLLOWING, viewModel = viewModel, onCommentsClick = { scope.launch { sheetState.show() } })
                                 1 -> VideoPager(state = state, feedType = FeedType.FOR_YOU, viewModel = viewModel, onCommentsClick = { scope.launch { sheetState.show() } })
-                                2 -> AuthorProfileScreen(profile = state.authorProfile, videos = state.authorVideos)
+                                2 -> AuthorProfileScreen(
+                                    profile = state.authorProfile, 
+                                    videos = state.authorVideos,
+                                    currentUserId = state.userProfile?.id // Passando o ID aqui
+                                )
                             }
                         }
 
@@ -225,98 +225,139 @@ fun VirtualCouchScreen(
 @Composable
 fun AuthorProfileScreen(
     profile: UserProfile?,
-    videos: List<VideoData>
+    videos: List<VideoData>,
+    currentUserId: String? // Recebe o ID para comparação
 ) {
-    if (profile == null) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = Color.White)
-        }
-        return
-    }
-
     val context = LocalContext.current
 
-    Column(modifier = Modifier.fillMaxSize().background(Color.Black).padding(top = 16.dp)) {
-        // Header
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF8F8F8)).padding(top = 16.dp)) {
         Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Image(
-                painter = rememberAsyncImagePainter(profile.avatarUrl),
-                contentDescription = null,
-                modifier = Modifier.size(90.dp).clip(CircleShape).border(2.dp, Color.DarkGray, CircleShape),
-                contentScale = ContentScale.Crop
+            Box(contentAlignment = Alignment.Center) {
+                Image(
+                    painter = rememberAsyncImagePainter(profile?.avatarUrl),
+                    contentDescription = null,
+                    modifier = Modifier.size(90.dp).clip(CircleShape).background(Color.LightGray).border(2.dp, Color.White, CircleShape),
+                    contentScale = ContentScale.Crop
+                )
+                if (profile == null) {
+                    CircularProgressIndicator(color = Color.Gray, modifier = Modifier.size(30.dp), strokeWidth = 2.dp)
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Text(
+                text = profile?.username ?: "@carregando...", 
+                color = Color.Black, 
+                fontWeight = FontWeight.Bold, 
+                fontSize = 18.sp
             )
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(text = profile.username ?: "Psicólogo", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            
             Spacer(modifier = Modifier.height(16.dp))
             
-            // Stats
             Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                ProfileStatItem(profile.followingCount, "Seguindo")
-                ProfileStatItem(profile.followersCount, "Seguidores")
-                ProfileStatItem(profile.likesCount, "Curtidas")
+                ProfileStatItemLight(profile?.followingCount ?: "...", "Seguindo")
+                ProfileStatItemLight(profile?.followersCount ?: "...", "Seguidores")
+                ProfileStatItemLight(profile?.likesCount ?: "...", "Curtidas")
             }
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            // Bio
-            profile.bio?.let {
-                Text(text = it, color = Color.White, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp), fontSize = 14.sp)
+            Box(modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp), contentAlignment = Alignment.Center) {
+                if (profile?.bio != null) {
+                    Text(text = profile.bio, color = Color.DarkGray, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp), fontSize = 14.sp)
+                } else if (profile == null) {
+                    Box(modifier = Modifier.width(200.dp).height(10.dp).background(Color.LightGray, RoundedCornerShape(4.dp)))
+                }
             }
             
             Spacer(modifier = Modifier.height(12.dp))
             
-            // Links
-            profile.links?.forEach { link ->
+            profile?.link?.let { url ->
                 Text(
-                    text = link.label,
+                    text = url.replace("https://", "").replace("http://", ""),
                     color = Color(0xFF1D4EEE),
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.clickable {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link.url)))
-                    }.padding(4.dp)
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(if (!url.startsWith("http")) "https://$url" else url))
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            Log.e("AuthorProfile", "Erro ao abrir link", e)
+                        }
+                    }.padding(8.dp)
                 )
             }
             
             Spacer(modifier = Modifier.height(16.dp))
-            
-            Button(
-                onClick = { /* Follow Logic */ },
-                colors = ButtonDefaults.buttonColors(backgroundColor = if (profile.isFollowing) Color.DarkGray else Color(0xFF1D4EEE)),
-                shape = RoundedCornerShape(4.dp),
-                modifier = Modifier.width(160.dp).height(36.dp)
-            ) {
-                Text(text = if (profile.isFollowing) "Seguindo" else "Seguir", color = Color.White)
+
+            // Botão Seguir: Com comparação correta agora usando o parâmetro recebido
+            if (profile != null && profile.id != currentUserId) {
+                Button(
+                    onClick = { /* Follow Logic */ },
+                    colors = ButtonDefaults.buttonColors(
+                        backgroundColor = if (profile.isFollowing) Color.DarkGray else Color(0xFF1D4EEE)
+                    ),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.width(160.dp).height(36.dp)
+                ) {
+                    Text(text = if (profile.isFollowing) "Seguindo" else "Seguir", color = Color.White)
+                }
             }
+            
+            Spacer(modifier = Modifier.height(16.dp))
         }
         
         Spacer(modifier = Modifier.height(24.dp))
+        Divider(color = Color.LightGray.copy(alpha = 0.5f))
         
-        // Videos Grid
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(3),
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(1.dp),
-            horizontalArrangement = Arrangement.spacedBy(1.dp),
-            verticalArrangement = Arrangement.spacedBy(1.dp)
-        ) {
-            items(videos) { video ->
-                Box(modifier = Modifier.aspectRatio(3f/4f).background(Color.DarkGray)) {
-                    Image(
-                        painter = rememberAsyncImagePainter(video.previewImageUri),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                    Text(
-                        text = "❤️ ${video.likes}",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        modifier = Modifier.align(Alignment.BottomStart).padding(4.dp),
-                        fontWeight = FontWeight.Bold
-                    )
+        if (videos.isEmpty() && profile == null) {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(1.dp),
+                horizontalArrangement = Arrangement.spacedBy(1.dp),
+                verticalArrangement = Arrangement.spacedBy(1.dp)
+            ) {
+                items(9) {
+                    Box(modifier = Modifier.aspectRatio(3f/4f).background(Color.LightGray.copy(alpha = 0.3f)))
+                }
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(1.dp),
+                horizontalArrangement = Arrangement.spacedBy(1.dp),
+                verticalArrangement = Arrangement.spacedBy(1.dp)
+            ) {
+                items(videos) { video ->
+                    Box(modifier = Modifier.aspectRatio(3f/4f).background(Color.LightGray)) {
+                        Image(
+                            painter = rememberAsyncImagePainter(video.previewImageUri),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                        Text(
+                            text = "❤️ ${video.likes}",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            modifier = Modifier.align(Alignment.BottomStart).padding(4.dp),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+fun ProfileStatItemLight(count: String, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(text = count, color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Text(text = label, color = Color.Gray, fontSize = 12.sp)
     }
 }
 

@@ -23,6 +23,7 @@ data class PostVideoRequest(
 
 @JsonClass(generateAdapter = true)
 data class UserProfileResponse(
+    val id: String?, // Adicionado ID para comparação
     val name: String?,
     val username: String?,
     val avatarUrl: String?,
@@ -36,16 +37,16 @@ data class UserVideoResponse(
     val id: String,
     val videoUrl: String,
     val thumbnailUrl: String?,
-    val content: String,
-    val likes: String,
-    val comments: String,
-    val shares: String
+    val content: String?,
+    val likes: String?,
+    val comments: String?,
+    val shares: String?
 )
 
 @JsonClass(generateAdapter = true)
 data class InteractionRequest(
     val postId: String,
-    val type: String, // 'VIEW' | 'LIKE' | 'COMMENT' | 'SHARE' | 'SKIP'
+    val type: String, 
     val weight: Int
 )
 
@@ -97,10 +98,17 @@ data class AuthorProfileResponse(
     val username: String?,
     val avatarUrl: String?,
     val bio: String?,
-    val links: List<AuthorLink>?,
-    val stats: FeedStats,
+    val link: String?,
+    val stats: AuthorStats,
     val isFollowing: Boolean,
     val videos: List<UserVideoResponse>
+)
+
+@JsonClass(generateAdapter = true)
+data class AuthorStats(
+    val followersCount: String,
+    val followingCount: String,
+    val likesCount: String
 )
 
 @JsonClass(generateAdapter = true)

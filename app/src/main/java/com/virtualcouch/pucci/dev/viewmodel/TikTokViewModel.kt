@@ -74,20 +74,36 @@ class TikTokViewModel @Inject constructor(
     val calendarEvents: Flow<List<EventEntity>> = calendarRepository.allEvents
 
     init {
-        // Inicialização SEQUENCIAL: Primeiro Session, DEPOIS Feed.
+        // Inicialização Unificada e Robusta
         viewModelScope.launch {
-            checkSessionTask() 
-            loadMoreVideos(FeedType.FOR_YOU)
+            Log.d(tag, "Startup: Initializing application flow...")
             
-            // Só libera a Splash Screen após carregar o primeiro feed
+            // 1. Primeiro garante que o token está atualizado (se houver um)
+            checkSessionTask() 
+            
+            // 2. Se temos uma sessão (ou refresh funcionou), carrega o feed
+            if (hasValidSession()) {
+                Log.d(tag, "Startup: Session valid. Loading initial feed...")
+                // Chamamos a versão suspend interna para esperar a conclusão
+                loadVideosInternal(FeedType.FOR_YOU)
+            } else {
+                Log.w(tag, "Startup: No valid session. Redirecting to Login.")
+            }
+            
+            // 3. Só agora liberamos a Splash Screen
+            Log.d(tag, "Startup: Initialization complete. Removing Splash.")
             _isCheckingSession.value = false
         }
     }
 
     private suspend fun checkSessionTask() {
         withContext(Dispatchers.IO) {
-            if (tokenManager.hasRefreshToken() && tokenManager.isAccessTokenExpired()) {
-                Log.d(tag, "Startup: Access token expired. Refreshing...")
+            val hasToken = tokenManager.getAccessToken() != null
+            val isExpired = tokenManager.isAccessTokenExpired()
+            val hasRefresh = tokenManager.hasRefreshToken()
+
+            if (hasRefresh && (isExpired || !hasToken)) {
+                Log.d(tag, "Startup: Access token expired or missing. Attempting refresh...")
                 try {
                     val refreshResponse = authApi.refreshTokens(RefreshTokenRequest(refreshToken = tokenManager.getRefreshToken()!!))
                     if (refreshResponse.isSuccessful && refreshResponse.body() != null) {
@@ -100,19 +116,20 @@ class TikTokViewModel @Inject constructor(
                         )
                         Log.i(tag, "Startup: Refresh successful.")
                     } else {
-                        Log.e(tag, "Startup: Refresh failed. Clearing session.")
-                        tokenManager.clearTokens()
+                        Log.e(tag, "Startup: Refresh failed (${refreshResponse.code()}).")
+                        // Se o refresh deu 401, a conta realmente deslogou
+                        if (refreshResponse.code() == 401) {
+                            tokenManager.clearTokens()
+                        }
                     }
                 } catch (e: Exception) {
-                    Log.e(tag, "Startup: Error during refresh", e)
+                    Log.e(tag, "Startup: Network error during refresh", e)
                 }
             }
-            // Removido o _isCheckingSession.value = false daqui
         }
     }
 
     fun syncCalendar() {
-        Log.d(tag, "Lazy Loading: Syncing Calendar")
         viewModelScope.launch(Dispatchers.IO) {
             calendarRepository.syncEvents()
         }
@@ -120,16 +137,14 @@ class TikTokViewModel @Inject constructor(
 
     fun fetchProfileData() {
         if (!hasValidSession()) return
-        Log.d(tag, "Lazy Loading: Fetching Profile and My Videos")
-        
         viewModelScope.launch(Dispatchers.IO) {
             val profileResponse = socialRepository.getUserProfile()
             val videos = socialRepository.getUserVideos()
-            
             _state.update { currentState ->
                 currentState.copy(
                     userProfile = profileResponse?.let {
                         UserProfile(
+                            id = it.id, // ID mapeado aqui
                             name = it.name,
                             username = it.username,
                             avatarUrl = it.avatarUrl,
@@ -170,6 +185,7 @@ class TikTokViewModel @Inject constructor(
                 )
                 _effect.emit(LoadingEffect(false))
                 _effect.emit(LoginSuccessEffect)
+                loadMoreVideos(FeedType.FOR_YOU)
             }
             return
         }
@@ -195,25 +211,19 @@ class TikTokViewModel @Inject constructor(
                         )
                         _effect.emit(LoadingEffect(false))
                         _effect.emit(LoginSuccessEffect)
+                        loadMoreVideos(FeedType.FOR_YOU)
                     } else {
                         _effect.emit(LoadingEffect(false))
                         _effect.emit(MessageEffect("Dados de login incompletos"))
                     }
                 } else {
                     val errorBody = response.errorBody()?.string()
-                    val errorMessage = try {
-                        val moshi = Moshi.Builder().build()
-                        val adapter = moshi.adapter(BaseErrorResponse::class.java)
-                        adapter.fromJson(errorBody ?: "")?.message ?: "Erro desconhecido"
-                    } catch (e: Exception) {
-                        "Erro no login (${response.code()})"
-                    }
                     _effect.emit(LoadingEffect(false))
-                    _effect.emit(MessageEffect(errorMessage))
+                    _effect.emit(MessageEffect("Erro no login (${response.code()})"))
                 }
             } catch (e: Exception) {
                 _effect.emit(LoadingEffect(false))
-                _effect.emit(MessageEffect("Erro de conexão: ${e.message}"))
+                _effect.emit(MessageEffect("Erro de conexão"))
             }
         }
     }
@@ -225,17 +235,17 @@ class TikTokViewModel @Inject constructor(
             if (response.isSuccessful) {
                 _effect.emit(NeedOtpEffect(phoneNumber))
             } else {
-                _effect.emit(MessageEffect("Erro ao enviar SMS de verificação"))
+                _effect.emit(MessageEffect("Erro ao enviar código"))
             }
         } catch (e: Exception) {
             _effect.emit(LoadingEffect(false))
-            _effect.emit(MessageEffect("Falha ao solicitar código: ${e.message}"))
+            _effect.emit(MessageEffect("Falha na solicitação"))
         }
     }
 
     fun verifyOtp(phoneNumber: String, token: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            _effect.emit(LoadingEffect(true, "Verificando código..."))
+            _effect.emit(LoadingEffect(true, "Verificando..."))
             try {
                 val response = authApi.verifyOtp(phoneNumber, token)
                 if (response.isSuccessful && response.body()?.tokens != null) {
@@ -248,55 +258,66 @@ class TikTokViewModel @Inject constructor(
                     )
                     _effect.emit(LoadingEffect(false))
                     _effect.emit(LoginSuccessEffect)
+                    loadMoreVideos(FeedType.FOR_YOU)
                 } else {
                     _effect.emit(LoadingEffect(false))
-                    _effect.emit(MessageEffect("Código de verificação inválido"))
+                    _effect.emit(MessageEffect("Código inválido"))
                 }
             } catch (e: Exception) {
                 _effect.emit(LoadingEffect(false))
-                _effect.emit(MessageEffect("Erro na verificação: ${e.message}"))
+                _effect.emit(MessageEffect("Erro na verificação"))
             }
         }
     }
 
     fun logout() {
         tokenManager.clearTokens()
-        _state.update { it.copy(userProfile = null, userVideos = emptyList()) }
+        _state.update { it.copy(userProfile = null, userVideos = emptyList(), videos = emptyList()) }
     }
 
     fun hasValidSession(): Boolean = tokenManager.hasAccessToken() || tokenManager.hasRefreshToken()
 
     fun loadMoreVideos(feedType: FeedType) {
+        viewModelScope.launch {
+            loadVideosInternal(feedType)
+        }
+    }
+
+    private suspend fun loadVideosInternal(feedType: FeedType) {
         val isLoading = if (feedType == FeedType.FOR_YOU) isLoadingForYou else isLoadingFollowing
         if (isLoading) return
         
         val token = if (feedType == FeedType.FOR_YOU) nextTokenForYou else nextTokenFollowing
 
-        viewModelScope.launch(Dispatchers.IO) {
+        withContext(Dispatchers.IO) {
             if (feedType == FeedType.FOR_YOU) isLoadingForYou = true else isLoadingFollowing = true
-            Log.d(tag, "Lazy Loading: Loading videos for $feedType")
             
-            repository.fetchData(feedType, token).collect { result ->
-                if (feedType == FeedType.FOR_YOU) nextTokenForYou = result.nextToken else nextTokenFollowing = result.nextToken
-                
-                val newVideos = result.videos
-                preloadVideos(newVideos.take(10))
+            try {
+                repository.fetchData(feedType, token).collect { result ->
+                    if (feedType == FeedType.FOR_YOU) nextTokenForYou = result.nextToken else nextTokenFollowing = result.nextToken
+                    
+                    val newVideos = result.videos
+                    preloadVideos(newVideos.take(10))
 
-                withContext(Dispatchers.Main) {
-                    _state.update { currentState ->
-                        val updatedForYou = if (feedType == FeedType.FOR_YOU) currentState.videos + newVideos else currentState.videos
-                        val updatedFollowing = if (feedType == FeedType.FOLLOWING) currentState.followingVideos + newVideos else currentState.followingVideos
-                        
-                        if (currentState.activeFeed == feedType) {
-                            currentState.player?.addMediaItems(newVideos.toMediaItems())
+                    withContext(Dispatchers.Main) {
+                        _state.update { currentState ->
+                            val updatedForYou = if (feedType == FeedType.FOR_YOU) currentState.videos + newVideos else currentState.videos
+                            val updatedFollowing = if (feedType == FeedType.FOLLOWING) currentState.followingVideos + newVideos else currentState.followingVideos
+                            
+                            if (currentState.activeFeed == feedType) {
+                                currentState.player?.addMediaItems(newVideos.toMediaItems())
+                            }
+                            
+                            currentState.copy(
+                                videos = updatedForYou,
+                                followingVideos = updatedFollowing
+                            )
                         }
-                        
-                        currentState.copy(
-                            videos = updatedForYou,
-                            followingVideos = updatedFollowing
-                        )
                     }
                 }
+            } catch (e: Exception) {
+                Log.e(tag, "Error loading videos", e)
+            } finally {
                 if (feedType == FeedType.FOR_YOU) isLoadingForYou = false else isLoadingFollowing = false
             }
         }
@@ -318,15 +339,11 @@ class TikTokViewModel @Inject constructor(
 
     fun switchFeed(feedType: FeedType) {
         if (_state.value.activeFeed == feedType) return
-        
         _state.update { it.copy(activeFeed = feedType) }
-        
-        // Se o feed de destino estiver vazio, carrega agora (Lazy Loading)
         val targetList = if (feedType == FeedType.FOR_YOU) _state.value.videos else _state.value.followingVideos
         if (targetList.isEmpty()) {
             loadMoreVideos(feedType)
         }
-
         state.value.player?.let { player ->
             player.setMediaItems(state.value.currentVideosList.toMediaItems())
             player.prepare()
@@ -335,106 +352,36 @@ class TikTokViewModel @Inject constructor(
 
     fun recordInteraction(postId: String, type: String, weight: Int) {
         if (!hasValidSession()) return
-        viewModelScope.launch(Dispatchers.IO) {
-            socialRepository.recordInteraction(postId, type, weight)
-        }
+        viewModelScope.launch(Dispatchers.IO) { socialRepository.recordInteraction(postId, type, weight) }
     }
 
-    fun onVideoFinished(postId: String) {
-        recordInteraction(postId, "VIEW", 1)
-    }
-
-    fun likeVideo(postId: String) {
-        recordInteraction(postId, "LIKE", 3)
-    }
-
-    fun shareVideo(postId: String) {
-        recordInteraction(postId, "SHARE", 5)
-    }
-
-    fun commentClicked(postId: String) {
-        recordInteraction(postId, "COMMENT", 2)
-    }
-
-    fun videoSkipped(postId: String) {
-        recordInteraction(postId, "SKIP", -1)
-    }
+    fun onVideoFinished(postId: String) { recordInteraction(postId, "VIEW", 1) }
+    fun likeVideo(postId: String) { recordInteraction(postId, "LIKE", 3) }
+    fun shareVideo(postId: String) { recordInteraction(postId, "SHARE", 5) }
+    fun commentClicked(postId: String) { recordInteraction(postId, "COMMENT", 2) }
+    fun videoSkipped(postId: String) { recordInteraction(postId, "SKIP", -1) }
 
     fun uploadCapturedVideo(uri: android.net.Uri?, description: String) {
         if (uri == null) return
-        
         viewModelScope.launch(Dispatchers.IO) {
             withContext(Dispatchers.Main) {
                 state.value.player?.pause()
-                _effect.emit(LoadingEffect(true, "Obtendo autorização de upload..."))
+                _effect.emit(LoadingEffect(true, "Enviando..."))
             }
-
             try {
                 val presignedResponse = socialApi.getPresignedUrl()
-                if (!presignedResponse.isSuccessful || presignedResponse.body() == null) {
-                    throw Exception("Falha ao obter URL de upload: ${presignedResponse.code()}")
-                }
                 val presignedData = presignedResponse.body()!!
-
-                withContext(Dispatchers.Main) {
-                    _effect.emit(LoadingEffect(true, "Enviando vídeo para a nuvem..."))
-                }
-
                 val inputStream = context.contentResolver.openInputStream(uri)
-                val fileBytes = inputStream?.readBytes() ?: throw Exception("Falha ao ler o arquivo de vídeo")
+                val fileBytes = inputStream?.readBytes()!!
                 inputStream.close()
-                val requestBody = fileBytes.toRequestBody(null) 
-
-                var uploadSuccess = false
-                var retryCount = 0
-                val maxRetries = 3
-
-                while (!uploadSuccess && retryCount <= maxRetries) {
-                    try {
-                        if (retryCount > 0) {
-                            withContext(Dispatchers.Main) {
-                                _effect.emit(LoadingEffect(true, "Falha na conexão. Tentativa $retryCount de $maxRetries..."))
-                            }
-                            delay(2000) 
-                        }
-                        val cloudResponse = cloudSocialApi.uploadToCloud(presignedData.uploadUrl, requestBody)
-                        if (cloudResponse.isSuccessful) {
-                            uploadSuccess = true
-                        } else {
-                            retryCount++
-                        }
-                    } catch (e: java.io.IOException) {
-                        retryCount++
-                        if (retryCount > maxRetries) throw e
-                    }
-                }
-
-                if (!uploadSuccess) throw Exception("Falha ao subir vídeo.")
-
-                val locale = context.resources.configuration.locales.get(0).toLanguageTag()
-                val confirmResponse = socialApi.postVideoConfirm(
-                    PostVideoRequest(
-                        postId = presignedData.postId,
-                        videoUrl = presignedData.publicUrl,
-                        content = description,
-                        locale = locale
-                    )
-                )
-
+                cloudSocialApi.uploadToCloud(presignedData.uploadUrl, fileBytes.toRequestBody(null))
+                socialApi.postVideoConfirm(PostVideoRequest(presignedData.postId, presignedData.publicUrl, description, "pt-BR"))
                 withContext(Dispatchers.Main) {
                     _effect.emit(LoadingEffect(false))
-                    if (confirmResponse.isSuccessful) {
-                        _effect.emit(MessageEffect("Vídeo publicado com sucesso!"))
-                        fetchProfileData()
-                    }
-                    state.value.player?.play()
+                    fetchProfileData()
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    _effect.emit(LoadingEffect(false))
-                    _effect.emit(MessageEffect("Erro no upload: ${e.message}"))
-                    state.value.player?.play()
-                }
+                withContext(Dispatchers.Main) { _effect.emit(LoadingEffect(false)) }
             }
         }
     }
@@ -445,31 +392,22 @@ class TikTokViewModel @Inject constructor(
                 val httpDataSourceFactory = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
                 val cacheDataSourceFactory = CacheDataSource.Factory().setCache(App.videoCache).setUpstreamDataSourceFactory(httpDataSourceFactory).setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
                 val loadControl = DefaultLoadControl.Builder().setBufferDurationsMs(1500, 5000, 1000, 1500).build()
-
-                val player = ExoPlayer.Builder(context)
-                    .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
-                    .setLoadControl(loadControl)
-                    .build().apply {
-                        repeatMode = Player.REPEAT_MODE_ONE
-                        setMediaItems(state.currentVideosList.toMediaItems())
-                        seekToDefaultPosition(currentIndex)
-                        prepare()
-                        
-                        addListener(object : Player.Listener {
-                            override fun onPlaybackStateChanged(playbackState: Int) {
-                                if (playbackState == Player.STATE_ENDED) {
-                                    val videos = _state.value.currentVideosList
-                                    if (currentIndex < videos.size) {
-                                        onVideoFinished(videos[currentIndex].id)
-                                    }
-                                }
+                val player = ExoPlayer.Builder(context).setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory)).setLoadControl(loadControl).build().apply {
+                    repeatMode = Player.REPEAT_MODE_ONE
+                    setMediaItems(state.currentVideosList.toMediaItems())
+                    seekToDefaultPosition(currentIndex)
+                    prepare()
+                    addListener(object : Player.Listener {
+                        override fun onPlaybackStateChanged(playbackState: Int) {
+                            if (playbackState == Player.STATE_ENDED) {
+                                val videos = _state.value.currentVideosList
+                                if (currentIndex < videos.size) onVideoFinished(videos[currentIndex].id)
                             }
-                        })
-                    }
+                        }
+                    })
+                }
                 state.copy(player = player)
-            }
-            else
-                state
+            } else state
         }
     }
 
@@ -477,12 +415,7 @@ class TikTokViewModel @Inject constructor(
         if (currentIndex != index) {
             val videos = state.value.currentVideosList
             state.value.player?.let { player ->
-                if (currentIndex < videos.size) {
-                    val playbackTime = player.currentPosition
-                    if (playbackTime < 5000) {
-                        videoSkipped(videos[currentIndex].id)
-                    }
-                }
+                if (currentIndex < videos.size && player.currentPosition < 5000) videoSkipped(videos[currentIndex].id)
             }
             currentIndex = index
         }
@@ -490,14 +423,10 @@ class TikTokViewModel @Inject constructor(
 
     fun releasePlayer(isChangingConfigurations: Boolean) {
         if (isChangingConfigurations) return
-        _state.update { state->
-            state.player?.release()
-            state.copy(player = null)
-        }
+        _state.update { it.player?.release(); it.copy(player = null) }
     }
 
     fun onPlayerError() {}
-
     fun play() { state.value.player?.play() }
     fun pause() { state.value.player?.pause() }
 
@@ -505,13 +434,8 @@ class TikTokViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.Main) {
             _effect.emit(ResetAnimationEffect)
             state.value.player?.let { player ->
-                val drawable = if (player.isPlaying) {
-                    player.pause()
-                    com.virtualcouch.pucci.dev.R.drawable.pause
-                } else {
-                    player.play()
-                    com.virtualcouch.pucci.dev.R.drawable.play
-                }
+                val drawable = if (player.isPlaying) { player.pause(); com.virtualcouch.pucci.dev.R.drawable.pause }
+                else { player.play(); com.virtualcouch.pucci.dev.R.drawable.play }
                 _effect.emit(AnimationEffect(drawable))
             }
         }

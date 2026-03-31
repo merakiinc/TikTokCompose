@@ -31,12 +31,10 @@ class SocialRepository @Inject constructor(
                         mediaUri = it.videoUrl,
                         previewImageUri = it.thumbnailUrl,
                         authorName = "Eu",
-                        description = it.content,
-                        likes = it.likes,
-                        comments = it.comments,
-                        shares = it.shares,
-                        isLiked = false,
-                        isFollowing = false
+                        description = it.content ?: "",
+                        likes = it.likes ?: "0",
+                        comments = it.comments ?: "0",
+                        shares = it.shares ?: "0"
                     )
                 } ?: emptyList()
             } else {
@@ -58,22 +56,23 @@ class SocialRepository @Inject constructor(
                     username = data.username,
                     avatarUrl = data.avatarUrl,
                     bio = data.bio,
-                    links = data.links,
-                    followersCount = data.stats.likes, // Backend deve mapear corretamente
-                    followingCount = data.stats.shares,
-                    likesCount = data.stats.comments,
+                    link = data.link,
+                    followersCount = data.stats.followersCount,
+                    followingCount = data.stats.followingCount,
+                    likesCount = data.stats.likesCount,
                     isFollowing = data.isFollowing
                 )
                 val videos = data.videos.map { 
                     VideoData(
                         id = it.id,
+                        authorId = data.id,
                         mediaUri = it.videoUrl,
                         previewImageUri = it.thumbnailUrl,
                         authorName = data.username ?: "Psicólogo",
-                        description = it.content,
-                        likes = it.likes,
-                        comments = it.comments,
-                        shares = it.shares
+                        description = it.content ?: "",
+                        likes = it.likes ?: "0",
+                        comments = it.comments ?: "0",
+                        shares = it.shares ?: "0"
                     )
                 }
                 Pair(profile, videos)
@@ -86,8 +85,6 @@ class SocialRepository @Inject constructor(
     suspend fun recordInteraction(postId: String, type: String, weight: Int) {
         try {
             api.recordInteraction(InteractionRequest(postId, type, weight))
-        } catch (e: Exception) {
-            // Silently fail for analytics
-        }
+        } catch (e: Exception) {}
     }
 }
