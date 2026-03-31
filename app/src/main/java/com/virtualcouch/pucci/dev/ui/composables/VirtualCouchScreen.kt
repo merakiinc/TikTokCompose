@@ -1,6 +1,10 @@
 package com.virtualcouch.pucci.dev.ui.composables
 
 import android.view.ViewGroup
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
@@ -47,6 +51,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -93,6 +98,9 @@ fun VirtualCouchScreen(
     var pendingVideoUri by remember { mutableStateOf<Uri?>(null) }
 
     var isTransitioningToProfile by remember { mutableStateOf(false) }
+    
+    // Estado para o Browser Interno
+    var browserUrl by remember { mutableStateOf<String?>(null) }
 
     ComposableLifecycle { _, event ->
         when (event) {
@@ -115,8 +123,8 @@ fun VirtualCouchScreen(
     val mainPagerState = rememberPagerState(initialPage = 1) { 3 } 
 
     // Lógica Unificada de Pausa de Áudio
-    LaunchedEffect(currentRoute, mainPagerState.currentPage, isTransitioningToProfile) {
-        if (currentRoute != "main" || mainPagerState.currentPage == 2 || isTransitioningToProfile) {
+    LaunchedEffect(currentRoute, mainPagerState.currentPage, isTransitioningToProfile, browserUrl) {
+        if (currentRoute != "main" || mainPagerState.currentPage == 2 || isTransitioningToProfile || browserUrl != null) {
             viewModel.pause()
         } else {
             viewModel.play()
@@ -145,8 +153,7 @@ fun VirtualCouchScreen(
             modifier = modifier.fillMaxSize(),
             backgroundColor = Color.Black,
             bottomBar = {
-                // OCULTA O MENU se estiver no perfil do autor (página 2 do main pager)
-                if (currentRoute != "main" || mainPagerState.currentPage < 2) {
+                if (browserUrl == null && (currentRoute != "main" || mainPagerState.currentPage < 2)) {
                     VirtualCouchBottomNavigation(
                         currentRoute = currentRoute,
                         onNavigate = { route ->
@@ -167,8 +174,7 @@ fun VirtualCouchScreen(
                 }
             }
         ) { paddingValues ->
-            // Se for a página de perfil do autor, ignoramos o padding do menu para usar tela cheia
-            val finalPadding = if (currentRoute == "main" && mainPagerState.currentPage == 2) PaddingValues(0.dp) else paddingValues
+            val finalPadding = if (browserUrl != null || (currentRoute == "main" && mainPagerState.currentPage == 2)) PaddingValues(0.dp) else paddingValues
             
             Box(modifier = Modifier.fillMaxSize().padding(finalPadding)) {
                 when (currentRoute) {
@@ -176,7 +182,7 @@ fun VirtualCouchScreen(
                         HorizontalPager(
                             state = mainPagerState,
                             modifier = Modifier.fillMaxSize(),
-                            userScrollEnabled = true
+                            userScrollEnabled = browserUrl == null
                         ) { page ->
                             when (page) {
                                 0 -> VideoPager(state = state, feedType = FeedType.FOLLOWING, viewModel = viewModel, onCommentsClick = { scope.launch { sheetState.show() } })
@@ -185,11 +191,8 @@ fun VirtualCouchScreen(
                                     profile = state.authorProfile, 
                                     videos = state.authorVideos,
                                     currentUserId = state.userProfile?.id,
-                                    onBack = {
-                                        scope.launch {
-                                            mainPagerState.animateScrollToPage(1)
-                                        }
-                                    }
+                                    onBack = { scope.launch { mainPagerState.animateScrollToPage(1) } },
+                                    onOpenLink = { url -> browserUrl = url } // Abre link na WebView
                                 )
                             }
                         }
@@ -206,6 +209,14 @@ fun VirtualCouchScreen(
                     }
                     "agenda" -> AgendaScreen()
                     "profile" -> ProfileScreen(profile = state.userProfile, videos = state.userVideos, onLogout = onLogout)
+                }
+
+                // OVERLAY DA WEBVIEW
+                browserUrl?.let { url ->
+                    WebViewScreen(
+                        url = url,
+                        onClose = { browserUrl = null }
+                    )
                 }
 
                 if (showDescriptionDialog) {
@@ -237,11 +248,92 @@ fun VirtualCouchScreen(
 }
 
 @Composable
+fun WebViewScreen(
+    url: String,
+    onClose: () -> Unit
+) {
+    val context = LocalContext.current
+    var menuExpanded by remember { mutableStateOf(false) }
+    
+    BackHandler { onClose() }
+
+    Column(modifier = Modifier.fillMaxSize().background(Color.White)) {
+        // Top Bar do Browser
+        TopAppBar(
+            backgroundColor = Color.White,
+            contentColor = Color.Black,
+            elevation = 4.dp,
+            modifier = Modifier.statusBarsPadding(),
+            title = {
+                Text(
+                    text = url.replace("https://", "").replace("http://", ""),
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            navigationIcon = {
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Default.Close, contentDescription = "Fechar")
+                }
+            },
+            actions = {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Menu")
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
+                    DropdownMenuItem(onClick = {
+                        menuExpanded = false
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                        context.startActivity(intent)
+                    }) {
+                        Text("Abrir no Navegador")
+                    }
+                }
+            }
+        )
+
+        // Componente WebView
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.loadWithOverviewMode = true
+                    settings.useWideViewPort = true
+                    settings.setSupportZoom(true)
+                    
+                    webViewClient = object : WebViewClient() {
+                        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                            val targetUrl = request?.url?.toString() ?: ""
+                            // BLOQUEIO DE APPS: Só permite carregar se for http ou https
+                            return if (targetUrl.startsWith("http://") || targetUrl.startsWith("https://")) {
+                                false // Deixa carregar na WebView
+                            } else {
+                                Log.w("WebView", "Blocked attempt to open App URL: $targetUrl")
+                                true // Consome o evento, bloqueando a abertura do app
+                            }
+                        }
+                    }
+                    
+                    loadUrl(if (!url.startsWith("http")) "https://$url" else url)
+                }
+            }
+        )
+    }
+}
+
+@Composable
 fun AuthorProfileScreen(
     profile: UserProfile?,
     videos: List<VideoData>,
     currentUserId: String?,
-    onBack: () -> Unit // Adicionado para o botão voltar
+    onBack: () -> Unit,
+    onOpenLink: (String) -> Unit // Novo callback para abrir link
 ) {
     val context = LocalContext.current
 
@@ -296,12 +388,7 @@ fun AuthorProfileScreen(
                         color = Color(0xFF1D4EEE),
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.clickable {
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(if (!url.startsWith("http")) "https://$url" else url))
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                Log.e("AuthorProfile", "Erro ao abrir link", e)
-                            }
+                            onOpenLink(url) // Agora chama a WebView interna
                         }.padding(8.dp)
                     )
                 }
@@ -563,8 +650,10 @@ fun VideoSideBar(
 
 @Composable
 fun SideBarIcon(icon: ImageVector, label: String, tint: Color = Color.White, onClick: () -> Unit = {}) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { onClick() }) {
-        Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(35.dp))
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        IconButton(onClick = onClick) {
+            Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(35.dp))
+        }
         Text(text = label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
     }
 }
