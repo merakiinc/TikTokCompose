@@ -1,5 +1,6 @@
 package com.virtualcouch.pucci.dev.di
 
+import android.content.Context
 import com.virtualcouch.pucci.dev.data.api.AuthApi
 import com.virtualcouch.pucci.dev.data.api.RedditApi
 import com.virtualcouch.pucci.dev.data.api.SocialApi
@@ -7,17 +8,35 @@ import com.virtualcouch.pucci.dev.util.AuthInterceptor
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
+import org.chromium.net.CronetEngine
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
+import java.io.File
 import javax.inject.Named
 import javax.inject.Singleton
 
 @Module
 @InstallIn(SingletonComponent::class)
 class NetworkModule {
+
+    @Provides
+    @Singleton
+    fun provideCronetEngine(@ApplicationContext context: Context): CronetEngine {
+        val cacheDir = File(context.cacheDir, "cronet_cache")
+        if (!cacheDir.exists()) cacheDir.mkdir()
+        
+        return CronetEngine.Builder(context)
+            .enableQuic(true)
+            .enableHttp2(true)
+            .enableBrotli(true)
+            .setStoragePath(cacheDir.absolutePath)
+            .enableHttpCache(CronetEngine.Builder.HTTP_CACHE_DISK, 10 * 1024 * 1024) // 10MB cache
+            .build()
+    }
 
     @Provides
     @Singleton

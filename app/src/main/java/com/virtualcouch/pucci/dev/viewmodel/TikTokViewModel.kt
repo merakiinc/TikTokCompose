@@ -9,10 +9,13 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.cronet.CronetDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheWriter
 import androidx.media3.datasource.DataSpec
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import org.chromium.net.CronetEngine
+import kotlinx.coroutines.asExecutor
 import com.virtualcouch.pucci.dev.App
 import com.virtualcouch.pucci.dev.data.api.*
 import com.virtualcouch.pucci.dev.data.local.entities.EventEntity
@@ -51,6 +54,7 @@ class TikTokViewModel @Inject constructor(
     private val tokenManager: TokenManager,
     private val calendarRepository: CalendarRepository,
     private val socialRepository: SocialRepository,
+    private val cronetEngine: CronetEngine,
     @ApplicationContext private val context: Context
 ): ViewModel() {
 
@@ -355,8 +359,9 @@ class TikTokViewModel @Inject constructor(
                 try {
                     val uri = Uri.parse(video.mediaUri)
                     val dataSpec = DataSpec(uri, 0, 2 * 1024 * 1024)
-                    val dataSource = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true).createDataSource()
-                    val cacheWriter = CacheWriter(CacheDataSource(App.videoCache, dataSource), dataSpec, null, null)
+                    // Usa CronetDataSource para preloading (QUIC)
+                    val cronetDataSourceFactory = CronetDataSource.Factory(cronetEngine, Dispatchers.IO.asExecutor())
+                    val cacheWriter = CacheWriter(CacheDataSource(App.videoCache, cronetDataSourceFactory.createDataSource()), dataSpec, null, null)
                     cacheWriter.cache() 
                 } catch (e: Exception) {}
             }
@@ -415,10 +420,22 @@ class TikTokViewModel @Inject constructor(
     fun createPlayer(context: Context) {
         _state.update { state->
             if (state.player == null) {
-                val httpDataSourceFactory = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
-                val cacheDataSourceFactory = CacheDataSource.Factory().setCache(App.videoCache).setUpstreamDataSourceFactory(httpDataSourceFactory).setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-                val loadControl = DefaultLoadControl.Builder().setBufferDurationsMs(1500, 5000, 1000, 1500).build()
-                val player = ExoPlayer.Builder(context).setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory)).setLoadControl(loadControl).build().apply {
+                // Configura CronetDataSource para o ExoPlayer principal (QUIC/HTTP3)
+                val cronetDataSourceFactory = CronetDataSource.Factory(cronetEngine, Dispatchers.IO.asExecutor())
+
+                val cacheDataSourceFactory = CacheDataSource.Factory()
+                    .setCache(App.videoCache)
+                    .setUpstreamDataSourceFactory(cronetDataSourceFactory)
+                    .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+
+                val loadControl = DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(1500, 5000, 1000, 1500)
+                    .build()
+
+                val player = ExoPlayer.Builder(context)
+                    .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
+                    .setLoadControl(loadControl)
+                    .build().apply {
                     repeatMode = Player.REPEAT_MODE_ONE
                     setMediaItems(state.currentVideosList.toMediaItems())
                     seekToDefaultPosition(currentIndex)

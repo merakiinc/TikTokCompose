@@ -103,7 +103,10 @@ dependencies {
     implementation "androidx.media3:media3-exoplayer-hls:$mediaVersion"
     implementation "androidx.media3:media3-exoplayer-dash:$mediaVersion"
     implementation "androidx.media3:media3-ui:$mediaVersion"
-    implementation "androidx.media3:media3-ui:$mediaVersion"
+    implementation "androidx.media3:media3-datasource-cronet:$mediaVersion"
+
+    // Cronet (Motor de rede do Chrome para QUIC/HTTP3)
+    implementation 'org.chromium.net:cronet-embedded:119.6045.31'
 
     // Calendar
     implementation "com.kizitonwose.calendar:compose:2.6.0"
